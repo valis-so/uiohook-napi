@@ -1,14 +1,14 @@
 {
   "name": "uiohook-napi",
-  "version": "1.5.5",
+  "version": "1.5.5-valis.1",
   "author": {
     "name": "Alexander Drozdov"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/SnosMe/uiohook-napi.git"
+    "url": "https://github.com/valis-so/uiohook-napi.git"
   },
-  "license": "MIT",
+  "license": "MIT AND LGPL-3.0-or-later",
   "keywords": [
     "iohook",
     "uiohook",
@@ -22,10 +22,13 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "install": "node-gyp-build",
-    "prebuild": "prebuildify --napi",
+    "prebuild": "prebuildify --napi --target electron@42.9.3",
     "build-ts": "tsc",
     "test:handshake:build": "node-gyp rebuild --directory test/handshake",
     "test:handshake": "npm run test:handshake:build && node test/handshake/run.mjs",
+    "test:package": "node --test test/package-inventory.test.mjs",
+    "test:electron": "node test/run-electron-smoke.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
     "demo": "ts-node src/demo.ts",
     "make-libuiohook-patch": "git -C ./libuiohook diff --cached > ./src/libuiohook.patch",
     "apply-libuiohook-patch": "git -C ./libuiohook apply ../src/libuiohook.patch"
@@ -35,12 +38,16 @@
     "binding.gyp",
     "libuiohook/src",
     "libuiohook/include",
+    "libuiohook/COPYING.md",
+    "libuiohook/COPYING.LESSER.md",
     "src/lib",
+    "src/libuiohook.patch",
+    "THIRD_PARTY_NOTICES.md",
     "prebuilds"
   ],
   "devDependencies": {
     "@types/node": "^18.19.130",
-    "node-gyp": "^10.3.1",
+    "node-gyp": "^13.0.2",
     "prebuildify": "^6.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

@@ -214,6 +214,10 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
   char name[32];
   size_t name_length = 0;
 
+  // Patched production code intentionally has no trylock call. Keep the shim
+  // referenced so warning-clean builds still compile against both revisions.
+  (void)test_uv_mutex_trylock;
+
   if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok ||
       argc != 1 ||
       napi_get_value_string_utf8(env, argv[0], name, sizeof(name),

@@ -1,90 +1,117 @@
 name: Prebuild
 
-on: push
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prebuild-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
 
 jobs:
-  prebuild-windows:
-    runs-on: windows-2022
+  handshake:
+    name: Handshake (${{ matrix.os }})
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-15
+          - windows-2025
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v6
-      with:
-        submodules: true
-    - uses: actions/setup-node@v6
-    - run: npm install --global node-gyp
-    - run: npm run apply-libuiohook-patch
-    - run: npm ci
-    - run: npm run prebuild "--" --arch x64
-    - run: npm run prebuild "--" --arch arm64
-    - uses: actions/upload-artifact@v6
-      with:
-        name: windows
-        path: prebuilds
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:package
+      - run: npm run test:handshake
 
-  prebuild-linux:
-    runs-on: ubuntu-22.04
+  prebuild:
+    name: Prebuild (${{ matrix.platform }}-${{ matrix.arch }})
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin
+            arch: arm64
+          - os: macos-15-intel
+            platform: darwin
+            arch: x64
+          - os: windows-2025
+            platform: win32
+            arch: x64
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v6
-      with:
-        submodules: true
-    - uses: actions/setup-node@v6
-    - run: |
-        sudo apt-get update
-        sudo apt-get install -y libxrandr-dev libxtst-dev
-    - run: npm run apply-libuiohook-patch
-    - run: npm ci
-    - run: npm run prebuild -- --arch x64
-    - run: npm run prebuild -- --arch arm64
-    - run: npm run prebuild -- --arch loong64
-    - uses: actions/upload-artifact@v6
-      with:
-        name: linux
-        path: prebuilds
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm run apply-libuiohook-patch
+      - run: npm ci --ignore-scripts
+      - run: npm run build-ts
+      - run: npm run prebuild -- --arch ${{ matrix.arch }}
+      - run: >-
+          node -e "require('node:fs').rmSync('build', { recursive: true, force: true })"
+      - run: npm run test:electron
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}
+          path: prebuilds
+          if-no-files-found: error
+          retention-days: 14
 
-  prebuild-darwin:
-    runs-on: macos-14
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        submodules: true
-    - uses: actions/setup-node@v6
-    - run: npm run apply-libuiohook-patch
-    - run: npm ci
-    - run: npm run prebuild -- --arch x64
-    - run: npm run prebuild -- --arch arm64
-    - uses: actions/upload-artifact@v6
-      with:
-        name: darwin
-        path: prebuilds
-
-  build-package:
+  package:
+    name: Package
     needs:
-    - prebuild-windows
-    - prebuild-linux
-    - prebuild-darwin
-    runs-on: ubuntu-latest
+      - handshake
+      - prebuild
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v6
-      with:
-        submodules: true
-    - uses: actions/download-artifact@v6
-      with:
-        name: windows
-        path: prebuilds
-    - uses: actions/download-artifact@v6
-      with:
-        name: linux
-        path: prebuilds
-    - uses: actions/download-artifact@v6
-      with:
-        name: darwin
-        path: prebuilds
-    - uses: actions/setup-node@v6
-    - run: npm run apply-libuiohook-patch
-    - run: npm ci --ignore-scripts
-    - run: npx tsc
-    - run: npm pack
-    - uses: actions/upload-artifact@v6
-      with:
-        name: package
-        path: uiohook-napi-*.tgz
-        retention-days: 3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: prebuild-*
+          path: prebuilds
+          merge-multiple: true
+      - run: npm run apply-libuiohook-patch
+      - run: npm ci --ignore-scripts
+      - run: npm run build-ts
+      - run: npm run test:package
+      - run: npm pack
+      - name: Verify installable package contents
+        shell: bash
+        run: |
+          package_tarball="$GITHUB_WORKSPACE/uiohook-napi-1.5.5-valis.1.tgz"
+          package_root="$RUNNER_TEMP/uiohook-package"
+          npm install --prefix "$package_root" --ignore-scripts "$package_tarball"
+          node scripts/verify-package.mjs "$package_root/node_modules/uiohook-napi"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: package
+          path: uiohook-napi-1.5.5-valis.1.tgz
+          if-no-files-found: error
+          retention-days: 14
