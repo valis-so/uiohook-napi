@@ -3,22 +3,33 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const expectedElectron = "42.9.3";
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const smokeScript = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "electron-smoke.cjs",
 );
+const npmArgs = [
+  "exec",
+  "--yes",
+  `--package=electron@${expectedElectron}`,
+  "--",
+  "electron",
+  smokeScript,
+];
+const command =
+  process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "npm";
+const commandArgs =
+  process.platform === "win32"
+    ? [
+        "/d",
+        "/s",
+        "/c",
+        `npm exec --yes --package=electron@${expectedElectron} -- electron "${smokeScript}"`,
+      ]
+    : npmArgs;
 
 const result = spawnSync(
-  npm,
-  [
-    "exec",
-    "--yes",
-    `--package=electron@${expectedElectron}`,
-    "--",
-    "electron",
-    smokeScript,
-  ],
+  command,
+  commandArgs,
   {
     encoding: "utf8",
     env: {
