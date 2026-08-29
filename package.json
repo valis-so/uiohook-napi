@@ -24,6 +24,8 @@
     "install": "node-gyp-build",
     "prebuild": "prebuildify --napi",
     "build-ts": "tsc",
+    "test:handshake:build": "node-gyp rebuild --directory test/handshake",
+    "test:handshake": "npm run test:handshake:build && node test/handshake/run.mjs",
     "demo": "ts-node src/demo.ts",
     "make-libuiohook-patch": "git -C ./libuiohook diff --cached > ./src/libuiohook.patch",
     "apply-libuiohook-patch": "git -C ./libuiohook apply ../src/libuiohook.patch"
@@ -38,6 +40,7 @@
   ],
   "devDependencies": {
     "@types/node": "^18.19.130",
+    "node-gyp": "^10.3.1",
     "prebuildify": "^6.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
