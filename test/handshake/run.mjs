@@ -58,8 +58,16 @@ function runBounded(name) {
 if (process.argv[2] === "--case") {
   runChildCase(process.argv[3]);
 } else {
+  const requestedCase = process.argv[2];
+  const cases = requestedCase
+    ? [requestedCase]
+    : ["spurious-wake", "early-failure"];
   let failures = 0;
-  for (const name of ["spurious-wake", "early-failure"]) {
+  for (const name of cases) {
+    if (!["spurious-wake", "early-failure"].includes(name)) {
+      throw new Error(`unknown handshake case: ${name}`);
+    }
+    console.log(`RUN ${name}`);
     try {
       await runBounded(name);
       console.log(`PASS ${name}`);

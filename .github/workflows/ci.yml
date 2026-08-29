@@ -40,7 +40,11 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run test:package
-      - run: npm run test:handshake
+      - run: npm run test:handshake:build
+      - run: node test/handshake/run.mjs spurious-wake
+        timeout-minutes: 2
+      - run: node test/handshake/run.mjs early-failure
+        timeout-minutes: 2
 
   prebuild:
     name: Prebuild (${{ matrix.platform }}-${{ matrix.arch }})

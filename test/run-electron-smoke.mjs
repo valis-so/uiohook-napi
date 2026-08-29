@@ -15,6 +15,7 @@ const npmArgs = [
   "electron",
   smokeScript,
 ];
+const windowsSmokeScript = path.relative(process.cwd(), smokeScript);
 const command =
   process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "npm";
 const commandArgs =
@@ -23,7 +24,7 @@ const commandArgs =
         "/d",
         "/s",
         "/c",
-        `npm exec --yes --package=electron@${expectedElectron} -- electron "${smokeScript}"`,
+        `npm exec --yes --package=electron@${expectedElectron} -- electron ${windowsSmokeScript}`,
       ]
     : npmArgs;
 
