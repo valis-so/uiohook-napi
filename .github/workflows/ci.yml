@@ -2,6 +2,10 @@ name: Prebuild
 
 on:
   push:
+    branches:
+      - master
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
