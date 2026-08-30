@@ -166,15 +166,18 @@ void tsfn_to_js_proxy(napi_env env, napi_value js_callback, void* context, void*
   napi_status status;
 
   napi_value event_obj = uiohook_to_js_event(env, event);
+  free(event);
 
   napi_value global;
   status = napi_get_global(env, &global);
   NAPI_FATAL_IF_FAILED(status, "tsfn_to_js_proxy", "napi_get_global");
 
   status = napi_call_function(env, global, js_callback, 1, &event_obj, NULL);
-  NAPI_FATAL_IF_FAILED(status, "tsfn_to_js_proxy", "napi_call_function");
-
-  free(event);
+  uiohook_napi_handle_callback_status(
+    env,
+    status,
+    "tsfn_to_js_proxy",
+    "napi_call_function");
 }
 
 napi_value AddonStart(napi_env env, napi_callback_info info) {
