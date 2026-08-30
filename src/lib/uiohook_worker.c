@@ -188,8 +188,6 @@ int uiohook_worker_start(dispatcher_t dispatch_proc) {
   user_dispatcher = dispatch_proc;
 
   // Start the hook and block.
-  // NOTE Startup succeeds only if EVENT_HOOK_ENABLED was delivered while the
-  // hook thread is still running.
   int status = hook_enable();
   if (status != UIOHOOK_SUCCESS) {
     // Close event handles for the thread hook.
