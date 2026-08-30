@@ -3,9 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const EXPECTED_NAME = "uiohook-napi";
-const EXPECTED_VERSION = "1.5.5-valis.1";
 const EXPECTED_LICENSE = "MIT AND LGPL-3.0-or-later";
 const EXPECTED_REPOSITORY = "https://github.com/valis-so/uiohook-napi.git";
+
+const sourcePackageJson = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+);
+export const EXPECTED_VERSION = sourcePackageJson.version;
 
 export const REQUIRED_PREBUILDS = Object.freeze([
   "prebuilds/darwin-arm64/uiohook-napi.node",

@@ -29,6 +29,7 @@
     "test:handshake:build": "node-gyp rebuild --directory test/handshake",
     "test:handshake": "npm run test:handshake:build && node test/handshake/run.mjs",
     "test:package": "node --test test/package-inventory.test.mjs test/find-package-tarball.test.mjs",
+    "test:node": "node test/runtime-smoke.cjs",
     "test:electron": "node test/run-electron-smoke.mjs",
     "verify:package": "node scripts/verify-package.mjs",
     "demo": "ts-node src/demo.ts",

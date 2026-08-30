@@ -79,6 +79,7 @@ jobs:
       - run: npm run prebuild -- --arch ${{ matrix.arch }}
       - run: >-
           node -e "require('node:fs').rmSync('build', { recursive: true, force: true })"
+      - run: npm run test:node
       - run: npm run test:electron
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

@@ -1,11 +1,28 @@
 import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const expectedElectron = "42.9.3";
+const packageJson = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+);
+const prebuildScript = packageJson.scripts?.prebuild;
+const electronTarget =
+  typeof prebuildScript === "string"
+    ? prebuildScript.match(
+        /(?:^|\s)--target(?:=|\s+)electron@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?=\s|$)/,
+      )
+    : null;
+if (!electronTarget) {
+  throw new Error(
+    "package.json scripts.prebuild must contain an exact --target electron@<version>",
+  );
+}
+
+const expectedElectron = electronTarget[1];
 const smokeScript = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  "electron-smoke.cjs",
+  "runtime-smoke.cjs",
 );
 const npmArgs = [
   "exec",
@@ -36,6 +53,7 @@ const result = spawnSync(
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
+      EXPECTED_ELECTRON: expectedElectron,
     },
     stdio: "inherit",
     timeout: 120_000,

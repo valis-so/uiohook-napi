@@ -5,8 +5,12 @@ and made immutable when published.
 
 ## Prepare the release
 
-1. Merge a pull request that updates the version in `package.json` and
-   `package-lock.json`.
+1. Merge a pull request that updates all release-specific metadata:
+   - The version in `package.json` and `package-lock.json`.
+   - Release archive URLs and current-release references in `README.md`.
+   - The supported versions table in `.github/SECURITY.md`.
+   - The prebuild version, corresponding-source revision, and release source
+     link in `THIRD_PARTY_NOTICES.md`.
 2. Confirm every required check passed on the merge commit.
 3. Update a local `master` branch and derive the release tag from the package
    version:
