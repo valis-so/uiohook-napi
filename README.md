@@ -47,9 +47,10 @@ Release `1.5.5-valis.1` contains prebuilt binaries for these CI-tested targets:
 | macOS | x64 (Intel) | `darwin-x64` |
 | Windows | x64 | `win32-x64` |
 
-Release CI builds with Node.js 24 and smoke-loads each binary with Electron
-42.9.3. The package declares Node.js 16 or newer, and the binaries use N-API.
-The release gate covers only the targets and runtime above.
+Release CI uses Node.js 24 as the build host, targets Electron 42.9.3 headers,
+and smoke-loads each binary with Electron 42.9.3. The resulting binaries use
+N-API, while the package declares Node.js 16 or newer. The release gate covers
+only the targets and runtime above.
 
 If no matching prebuild exists and dependency lifecycle scripts are enabled,
 the `node-gyp-build` install hook attempts a local `node-gyp rebuild`. Package
@@ -111,8 +112,9 @@ The public methods are:
 
 Event objects include the discriminating `type` and numeric `time` fields in
 addition to their keyboard, mouse, or wheel fields. The package ships its full
-TypeScript declarations in `dist/index.d.ts`; [`src/index.ts`](src/index.ts) is
-the source of truth.
+TypeScript declarations in `dist/index.d.ts`;
+[`src/index.ts`](https://github.com/valis-so/uiohook-napi/blob/master/src/index.ts)
+is the source of truth.
 
 ## License
 
