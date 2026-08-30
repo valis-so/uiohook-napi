@@ -31,6 +31,9 @@ static int hook_thread_status;
 static uv_mutex_t hook_control_mutex;
 static uv_cond_t hook_control_cond;
 static hook_start_state hook_state;
+// A failed hook_stop() leaves the thread and its synchronization resources
+// live. Do not reinitialize or overwrite them on a later start attempt.
+static bool worker_initialized = false;
 
 static dispatcher_t user_dispatcher = NULL;
 
@@ -170,12 +173,15 @@ int hook_enable() {
 
 
 int uiohook_worker_start(dispatcher_t dispatch_proc) {
+  if (worker_initialized) return UIOHOOK_FAILURE;
+
   // Lock the thread control mutex.  This will be unlocked when the
   // thread has finished starting, or when it has fully stopped.
 
   // Create event handles for the thread hook.
   uv_mutex_init(&hook_control_mutex);
   uv_cond_init(&hook_control_cond);
+  worker_initialized = true;
 
   // Set the logger callback for library output.
   hook_set_logger_proc(logger_proc);
@@ -192,6 +198,7 @@ int uiohook_worker_start(dispatcher_t dispatch_proc) {
     // Close event handles for the thread hook.
     uv_mutex_destroy(&hook_control_mutex);
     uv_cond_destroy(&hook_control_cond);
+    worker_initialized = false;
   }
 
   return status;
@@ -206,6 +213,7 @@ int uiohook_worker_stop() {
     // Close event handles for the thread hook.
     uv_mutex_destroy(&hook_control_mutex);
     uv_cond_destroy(&hook_control_cond);
+    worker_initialized = false;
   }
 
   return status;

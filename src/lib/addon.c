@@ -65,25 +65,26 @@ static int stop_owner(addon_state* state, napi_threadsafe_function* threadsafe_f
 }
 
 void dispatch_proc(uiohook_event* const event) {
-  uv_mutex_lock(&lifecycle_mutex);
-  addon_state* owner = active_owner;
-  napi_threadsafe_function threadsafe_fn = owner != NULL ? owner->threadsafe_fn : NULL;
-  if (threadsafe_fn == NULL) {
-    uv_mutex_unlock(&lifecycle_mutex);
-    return;
-  }
-
   uiohook_event* copied_event = malloc(sizeof(uiohook_event));
+  if (copied_event == NULL) return;
+
   memcpy(copied_event, event, sizeof(uiohook_event));
   if (copied_event->type == EVENT_MOUSE_DRAGGED) {
     copied_event->type = EVENT_MOUSE_MOVED;
   }
 
+  uv_mutex_lock(&lifecycle_mutex);
+  addon_state* owner = active_owner;
+  napi_threadsafe_function threadsafe_fn = owner != NULL ? owner->threadsafe_fn : NULL;
+  if (threadsafe_fn == NULL) {
+    uv_mutex_unlock(&lifecycle_mutex);
+    free(copied_event);
+    return;
+  }
+
   napi_status status = napi_call_threadsafe_function(threadsafe_fn, copied_event, napi_tsfn_nonblocking);
   if (status == napi_closing) {
-    if (active_owner == owner && owner->threadsafe_fn == threadsafe_fn) {
-      owner->threadsafe_fn = NULL;
-    }
+    owner->threadsafe_fn = NULL;
     uv_mutex_unlock(&lifecycle_mutex);
     free(copied_event);
     return;

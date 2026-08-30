@@ -112,13 +112,14 @@ function createWorker (action) {
   })
 }
 
-async function runWorkerToExit (action) {
+async function runWorkerToExit (action, assertMessage) {
   const worker = createWorker(action)
   const messagePromise = once(worker, 'message')
   const exitPromise = once(worker, 'exit')
-  const [[message], [exitCode]] = await Promise.all([messagePromise, exitPromise])
+  const [message] = await messagePromise
+  assertMessage(message)
+  const [exitCode] = await exitPromise
   assert.equal(exitCode, 0)
-  return message
 }
 
 function assertWorkerError (message, code) {
@@ -157,8 +158,9 @@ async function testNonOwnerExit () {
   const eventProbe = createEventProbe()
   startOwner(eventProbe.callback)
 
-  const message = await runWorkerToExit('load')
-  assert.equal(message.kind, 'loaded')
+  await runWorkerToExit('load', (message) => {
+    assert.equal(message.kind, 'loaded')
+  })
 
   if (syntheticInput) {
     await eventProbe.postAndWait()
@@ -171,15 +173,17 @@ async function testNonOwnerExit () {
 
 async function testCompetingStart () {
   startOwner(() => {})
-  const message = await runWorkerToExit('start')
-  assertWorkerError(message, 'UIOHOOK_ERROR_ALREADY_RUNNING')
+  await runWorkerToExit('start', (message) => {
+    assertWorkerError(message, 'UIOHOOK_ERROR_ALREADY_RUNNING')
+  })
   addon.stop()
 }
 
 async function testNonOwnerStop () {
   startOwner(() => {})
-  const message = await runWorkerToExit('stop')
-  assertWorkerError(message, 'UIOHOOK_ERROR_NOT_OWNER')
+  await runWorkerToExit('stop', (message) => {
+    assertWorkerError(message, 'UIOHOOK_ERROR_NOT_OWNER')
+  })
   addon.stop()
 }
 
