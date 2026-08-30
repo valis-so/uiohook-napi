@@ -1,17 +1,31 @@
 const assert = require("node:assert/strict");
 
-const expectedElectron = process.env.EXPECTED_ELECTRON;
-if (expectedElectron) {
+if (process.argv.length !== 3) {
+  throw new Error(
+    "usage: node test/runtime-smoke.cjs <node|electron@<version>>",
+  );
+}
+
+const target = process.argv[2];
+const expectedElectron = target.startsWith("electron@")
+  ? target.slice("electron@".length)
+  : undefined;
+
+if (target === "node") {
+  assert.equal(
+    process.versions.electron,
+    undefined,
+    `expected plain Node, got Electron ${process.versions.electron}`,
+  );
+} else if (expectedElectron) {
   assert.equal(
     process.versions.electron,
     expectedElectron,
     `expected Electron ${expectedElectron}, got ${process.versions.electron ?? "plain Node"}`,
   );
 } else {
-  assert.equal(
-    process.versions.electron,
-    undefined,
-    `expected plain Node, got Electron ${process.versions.electron}`,
+  throw new Error(
+    `invalid runtime target ${JSON.stringify(target)}; expected "node" or "electron@<version>"`,
   );
 }
 

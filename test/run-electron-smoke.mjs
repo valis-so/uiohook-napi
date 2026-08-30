@@ -20,6 +20,7 @@ if (!electronTarget) {
 }
 
 const expectedElectron = electronTarget[1];
+const runtimeTarget = `electron@${expectedElectron}`;
 const smokeScript = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "runtime-smoke.cjs",
@@ -31,6 +32,7 @@ const npmArgs = [
   "--",
   "electron",
   smokeScript,
+  runtimeTarget,
 ];
 const windowsSmokeScript = path.relative(process.cwd(), smokeScript);
 const command =
@@ -41,7 +43,7 @@ const commandArgs =
         "/d",
         "/s",
         "/c",
-        `npm exec --yes --package=electron@${expectedElectron} -- electron ${windowsSmokeScript}`,
+        `npm exec --yes --package=electron@${expectedElectron} -- electron ${windowsSmokeScript} ${runtimeTarget}`,
       ]
     : npmArgs;
 
@@ -53,7 +55,6 @@ const result = spawnSync(
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
-      EXPECTED_ELECTRON: expectedElectron,
     },
     stdio: "inherit",
     timeout: 120_000,
