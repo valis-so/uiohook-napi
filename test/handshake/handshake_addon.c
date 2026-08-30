@@ -9,7 +9,8 @@ typedef enum {
   TEST_SPURIOUS_WAKE,
   TEST_EARLY_FAILURE,
   TEST_FAILED_STOP,
-  TEST_ENABLED_THEN_SUCCESSFUL_EXIT
+  TEST_ENABLED_THEN_SUCCESSFUL_EXIT,
+  TEST_FINISHED_BEFORE_STOP
 } test_scenario;
 
 typedef enum {
@@ -154,7 +155,8 @@ static void test_uv_cond_signal(uv_cond_t* cond) {
 
   uv_cond_signal(cond);
 
-  if (scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT &&
+  if ((scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT ||
+       scenario == TEST_FINISHED_BEFORE_STOP) &&
       cond == &hook_control_cond && is_worker_thread() &&
       hook_state == HOOK_START_FINISHED) {
     uv_sem_post(&worker_finished);
@@ -283,7 +285,9 @@ static int test_hook_run(void) {
 }
 
 static int test_hook_stop(void) {
-  if (scenario == TEST_FAILED_STOP) return UIOHOOK_FAILURE;
+  if (scenario == TEST_FAILED_STOP || scenario == TEST_FINISHED_BEFORE_STOP) {
+    return UIOHOOK_FAILURE;
+  }
 
   uv_sem_post(&stop_requested);
   return UIOHOOK_SUCCESS;
@@ -327,6 +331,8 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
     scenario = TEST_FAILED_STOP;
   } else if (strcmp(name, "enabled-then-successful-exit") == 0) {
     scenario = TEST_ENABLED_THEN_SUCCESSFUL_EXIT;
+  } else if (strcmp(name, "finished-before-stop") == 0) {
+    scenario = TEST_FINISHED_BEFORE_STOP;
   } else {
     napi_throw_range_error(env, NULL, "unknown handshake scenario");
     return NULL;
@@ -355,7 +361,8 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
       napi_throw_error(env, NULL, "failed to create spurious-wake helper");
       return NULL;
     }
-  } else if (scenario == TEST_FAILED_STOP) {
+  } else if (scenario == TEST_FAILED_STOP ||
+             scenario == TEST_FINISHED_BEFORE_STOP) {
     uv_sem_post(&allow_enabled);
   }
 
@@ -367,6 +374,11 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
              start_status == UIOHOOK_SUCCESS &&
              uiohook_worker_stop() == UIOHOOK_FAILURE) {
     result = uiohook_worker_start(noop_dispatch);
+  } else if (scenario == TEST_FINISHED_BEFORE_STOP &&
+             start_status == UIOHOOK_SUCCESS) {
+    uv_sem_post(&stop_requested);
+    uv_sem_wait(&worker_finished);
+    result = uiohook_worker_stop();
   }
 
   if (helper_started) {
@@ -376,6 +388,10 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
   bool cleanup_valid = true;
   if (scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT &&
       start_status != UIOHOOK_SUCCESS) {
+    cleanup_valid = control_mutex_destroy_calls == 1 &&
+                    control_cond_destroy_calls == 1;
+  } else if (scenario == TEST_FINISHED_BEFORE_STOP &&
+             result == UIOHOOK_SUCCESS) {
     cleanup_valid = control_mutex_destroy_calls == 1 &&
                     control_cond_destroy_calls == 1;
   }

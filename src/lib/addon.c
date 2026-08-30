@@ -76,20 +76,25 @@ void dispatch_proc(uiohook_event* const event) {
   uv_mutex_lock(&lifecycle_mutex);
   addon_state* owner = active_owner;
   napi_threadsafe_function threadsafe_fn = owner != NULL ? owner->threadsafe_fn : NULL;
+  uv_mutex_unlock(&lifecycle_mutex);
   if (threadsafe_fn == NULL) {
-    uv_mutex_unlock(&lifecycle_mutex);
     free(copied_event);
     return;
   }
 
+  // The hook thread is joined before its TSFN is detached or released, so the
+  // handle remains valid for the duration of this callback without the global
+  // lifecycle lock.
   napi_status status = napi_call_threadsafe_function(threadsafe_fn, copied_event, napi_tsfn_nonblocking);
   if (status == napi_closing) {
-    owner->threadsafe_fn = NULL;
+    uv_mutex_lock(&lifecycle_mutex);
+    if (active_owner == owner && active_owner->threadsafe_fn == threadsafe_fn) {
+      active_owner->threadsafe_fn = NULL;
+    }
     uv_mutex_unlock(&lifecycle_mutex);
     free(copied_event);
     return;
   }
-  uv_mutex_unlock(&lifecycle_mutex);
   NAPI_FATAL_IF_FAILED(status, "dispatch_proc", "napi_call_threadsafe_function");
 }
 

@@ -12,8 +12,10 @@ const expectedByCase = new Map([
   ["early-failure", 2],
   ["failed-stop", 1],
   ["enabled-then-successful-exit", 1],
+  ["finished-before-stop", 0],
 ]);
 const fatalCases = new Set(["cleanup-stop-failure"]);
+const addonCases = new Set(["dispatch-unlocked"]);
 
 function runChildCase(name) {
   if (fatalCases.has(name)) {
@@ -27,6 +29,14 @@ function runChildCase(name) {
       `,
       { eval: true, workerData: addonPath },
     );
+    return;
+  }
+
+  if (addonCases.has(name)) {
+    const addon = require("./build/Release/cleanup_failure_test.node");
+    addon.start(() => {});
+    addon.keyTap(0x001e, 0);
+    addon.stop();
     return;
   }
 
@@ -95,10 +105,10 @@ if (process.argv[2] === "--case") {
   const requestedCase = process.argv[2];
   const cases = requestedCase
     ? [requestedCase]
-    : [...expectedByCase.keys(), ...fatalCases];
+    : [...expectedByCase.keys(), ...fatalCases, ...addonCases];
   let failures = 0;
   for (const name of cases) {
-    if (!expectedByCase.has(name) && !fatalCases.has(name)) {
+    if (!expectedByCase.has(name) && !fatalCases.has(name) && !addonCases.has(name)) {
       throw new Error(`unknown handshake case: ${name}`);
     }
     console.log(`RUN ${name}`);

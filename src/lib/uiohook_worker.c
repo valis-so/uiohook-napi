@@ -208,14 +208,19 @@ int uiohook_worker_start(dispatcher_t dispatch_proc) {
 int uiohook_worker_stop() {
   int status = hook_stop();
 
-  if (status == UIOHOOK_SUCCESS) {
-    uv_thread_join(&hook_thread);
-
-    // Close event handles for the thread hook.
-    uv_mutex_destroy(&hook_control_mutex);
-    uv_cond_destroy(&hook_control_cond);
-    worker_initialized = false;
+  if (status != UIOHOOK_SUCCESS) {
+    uv_mutex_lock(&hook_control_mutex);
+    bool hook_finished = hook_state == HOOK_START_FINISHED;
+    uv_mutex_unlock(&hook_control_mutex);
+    if (!hook_finished) return status;
   }
 
-  return status;
+  uv_thread_join(&hook_thread);
+
+  // Close event handles for the thread hook.
+  uv_mutex_destroy(&hook_control_mutex);
+  uv_cond_destroy(&hook_control_cond);
+  worker_initialized = false;
+
+  return UIOHOOK_SUCCESS;
 }
