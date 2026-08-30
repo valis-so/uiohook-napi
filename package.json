@@ -25,6 +25,8 @@
     "test": "node --test test/*.test.js",
     "prebuild": "prebuildify --napi --target electron@42.9.3",
     "build-ts": "tsc",
+    "test:listener-exception:build": "node-gyp rebuild --directory test/listener-exception",
+    "test:listener-exception": "npm run test:listener-exception:build && node test/listener-exception/run.cjs",
     "test:handshake:build": "node-gyp rebuild --directory test/handshake",
     "test:handshake": "npm run test:handshake:build && node test/handshake/run.mjs",
     "test:package": "node --test test/package-inventory.test.mjs",

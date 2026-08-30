@@ -163,12 +163,14 @@ int hook_enable() {
   }
 
   // The thread has returned from hook_run() -- either it failed to start, or it
-  // started and stopped again before we got here. Both are reported by its own
-  // status. The join cannot block on the handshake, and it deliberately runs
-  // without the control mutex held, so it cannot block on anything the hook
-  // thread might still want.
+  // started and stopped again before we got here. Preserve a real hook error,
+  // but never report a joined terminal thread as running successfully. The join
+  // cannot block on the handshake, and it deliberately runs without the control
+  // mutex held, so it cannot block on anything the hook thread might still want.
   uv_thread_join(&hook_thread);
-  return hook_thread_status;
+  return hook_thread_status == UIOHOOK_SUCCESS
+    ? UIOHOOK_FAILURE
+    : hook_thread_status;
 }
 
 
@@ -192,7 +194,6 @@ int uiohook_worker_start(dispatcher_t dispatch_proc) {
   user_dispatcher = dispatch_proc;
 
   // Start the hook and block.
-  // NOTE If EVENT_HOOK_ENABLED was delivered, the status will always succeed.
   int status = hook_enable();
   if (status != UIOHOOK_SUCCESS) {
     // Close event handles for the thread hook.
