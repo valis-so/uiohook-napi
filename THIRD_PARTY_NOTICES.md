@@ -5,7 +5,7 @@ The `uiohook-napi` wrapper source is licensed under the MIT License in
 
 The package also contains and statically links
 [libuiohook](https://github.com/kwhat/libuiohook), licensed under
-LGPL-3.0-or-later. The `1.5.5-valis.1` prebuilds use libuiohook commit
+LGPL-3.0-or-later. The `1.5.5-valis.2` prebuilds use libuiohook commit
 `f259ff37e81125f6f91ebac5439e7cde1e78b296` with the changes recorded in
 [`src/libuiohook.patch`](src/libuiohook.patch).
 
@@ -20,4 +20,4 @@ corresponding repository revision is available at:
 Valis fork source and build instructions for this package release are available
 at:
 
-<https://github.com/valis-so/uiohook-napi/tree/v1.5.5-valis.1>
+<https://github.com/valis-so/uiohook-napi/tree/v1.5.5-valis.2>
