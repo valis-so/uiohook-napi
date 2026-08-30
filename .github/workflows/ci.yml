@@ -107,6 +107,7 @@ jobs:
           merge-multiple: true
       - run: npm run apply-libuiohook-patch
       - run: npm ci --ignore-scripts
+      - run: npm run test:listener-exception
       - run: npm run build-ts
       - run: npm run test:package
       - run: npm pack

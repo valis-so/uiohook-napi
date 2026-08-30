@@ -1,6 +1,30 @@
 #include <string.h>
 #include "napi_helpers.h"
 
+void uiohook_napi_handle_callback_status(
+    napi_env env,
+    napi_status status,
+    const char* location,
+    const char* message) {
+  if (status != napi_pending_exception) {
+    NAPI_FATAL_IF_FAILED(status, location, message);
+    return;
+  }
+
+  napi_value error;
+  status = napi_get_and_clear_last_exception(env, &error);
+  NAPI_FATAL_IF_FAILED(
+    status,
+    "uiohook_napi_handle_callback_status",
+    "napi_get_and_clear_last_exception");
+
+  status = napi_fatal_exception(env, error);
+  NAPI_FATAL_IF_FAILED(
+    status,
+    "uiohook_napi_handle_callback_status",
+    "napi_fatal_exception");
+}
+
 napi_value error_create(napi_env env) {
   napi_status status;
   napi_value error = NULL;
