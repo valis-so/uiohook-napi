@@ -49,5 +49,10 @@
 
 
 napi_value error_create(napi_env env);
+void uiohook_napi_handle_callback_status(
+  napi_env env,
+  napi_status status,
+  const char* location,
+  const char* message);
 
 #endif // !ADDON_SRC_HELPERS_H_

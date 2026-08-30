@@ -7,7 +7,8 @@
 typedef enum {
   TEST_NONE = 0,
   TEST_SPURIOUS_WAKE,
-  TEST_EARLY_FAILURE
+  TEST_EARLY_FAILURE,
+  TEST_ENABLED_THEN_SUCCESSFUL_EXIT
 } test_scenario;
 
 typedef enum {
@@ -21,9 +22,11 @@ typedef enum {
 
 static void test_uv_cond_signal(uv_cond_t* cond);
 static void test_uv_cond_wait(uv_cond_t* cond, uv_mutex_t* mutex);
+static void test_uv_cond_destroy(uv_cond_t* cond);
 static void test_uv_mutex_lock(uv_mutex_t* mutex);
 static int test_uv_mutex_trylock(uv_mutex_t* mutex);
 static void test_uv_mutex_unlock(uv_mutex_t* mutex);
+static void test_uv_mutex_destroy(uv_mutex_t* mutex);
 static int test_hook_run(void);
 static int test_hook_stop(void);
 static void test_hook_set_dispatch_proc(dispatcher_t dispatch_proc);
@@ -34,9 +37,11 @@ static void test_hook_set_logger_proc(logger_t logger_proc);
 // therefore exercised directly instead of against a copied implementation.
 #define uv_cond_signal test_uv_cond_signal
 #define uv_cond_wait test_uv_cond_wait
+#define uv_cond_destroy test_uv_cond_destroy
 #define uv_mutex_lock test_uv_mutex_lock
 #define uv_mutex_trylock test_uv_mutex_trylock
 #define uv_mutex_unlock test_uv_mutex_unlock
+#define uv_mutex_destroy test_uv_mutex_destroy
 #define hook_run test_hook_run
 #define hook_stop test_hook_stop
 #define hook_set_dispatch_proc test_hook_set_dispatch_proc
@@ -46,9 +51,11 @@ static void test_hook_set_logger_proc(logger_t logger_proc);
 #undef hook_set_dispatch_proc
 #undef hook_stop
 #undef hook_run
+#undef uv_mutex_destroy
 #undef uv_mutex_unlock
 #undef uv_mutex_trylock
 #undef uv_mutex_lock
+#undef uv_cond_destroy
 #undef uv_cond_wait
 #undef uv_cond_signal
 
@@ -58,11 +65,14 @@ static uv_mutex_t stage_mutex;
 static uv_cond_t stage_cond;
 static uv_sem_t allow_enabled;
 static uv_sem_t stop_requested;
+static uv_sem_t worker_finished;
 static uv_thread_t helper_thread;
 static uv_key_t worker_thread_key;
 static dispatcher_t hook_dispatcher;
 static bool worker_owns_control_mutex;
 static unsigned int control_wait_calls;
+static unsigned int control_mutex_destroy_calls;
+static unsigned int control_cond_destroy_calls;
 
 static void set_stage(test_stage next) {
   uv_mutex_lock(&stage_mutex);
@@ -101,6 +111,12 @@ static void test_uv_cond_signal(uv_cond_t* cond) {
   }
 
   uv_cond_signal(cond);
+
+  if (scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT &&
+      cond == &hook_control_cond && is_worker_thread() &&
+      hook_state == HOOK_START_FINISHED) {
+    uv_sem_post(&worker_finished);
+  }
 }
 
 static void test_uv_cond_wait(uv_cond_t* cond, uv_mutex_t* mutex) {
@@ -132,7 +148,24 @@ static void test_uv_cond_wait(uv_cond_t* cond, uv_mutex_t* mutex) {
     uv_mutex_unlock(&stage_mutex);
   }
 
+  if (scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT) {
+    // Model the legal schedule where hook_run() returns after reporting enabled
+    // but before hook_enable() can reacquire the control mutex.
+    uv_mutex_unlock(mutex);
+    uv_sem_wait(&worker_finished);
+    uv_mutex_lock(mutex);
+    return;
+  }
+
   uv_cond_wait(cond, mutex);
+}
+
+static void test_uv_cond_destroy(uv_cond_t* cond) {
+  if (cond == &hook_control_cond) {
+    control_cond_destroy_calls += 1;
+  }
+
+  uv_cond_destroy(cond);
 }
 
 static void test_uv_mutex_lock(uv_mutex_t* mutex) {
@@ -174,18 +207,32 @@ static void test_uv_mutex_unlock(uv_mutex_t* mutex) {
   uv_mutex_unlock(mutex);
 }
 
+static void test_uv_mutex_destroy(uv_mutex_t* mutex) {
+  if (mutex == &hook_control_mutex) {
+    control_mutex_destroy_calls += 1;
+  }
+
+  uv_mutex_destroy(mutex);
+}
+
 static int test_hook_run(void) {
   uv_key_set(&worker_thread_key, (void*)1);
 
   if (scenario == TEST_EARLY_FAILURE) {
-    return UIOHOOK_FAILURE;
+    return UIOHOOK_ERROR_OUT_OF_MEMORY;
   }
 
-  uv_sem_wait(&allow_enabled);
+  if (scenario != TEST_ENABLED_THEN_SUCCESSFUL_EXIT) {
+    uv_sem_wait(&allow_enabled);
+  }
 
   uiohook_event event = {0};
   event.type = EVENT_HOOK_ENABLED;
   hook_dispatcher(&event);
+
+  if (scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT) {
+    return UIOHOOK_SUCCESS;
+  }
 
   uv_sem_wait(&stop_requested);
   return UIOHOOK_SUCCESS;
@@ -230,6 +277,8 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
     scenario = TEST_SPURIOUS_WAKE;
   } else if (strcmp(name, "early-failure") == 0) {
     scenario = TEST_EARLY_FAILURE;
+  } else if (strcmp(name, "enabled-then-successful-exit") == 0) {
+    scenario = TEST_ENABLED_THEN_SUCCESSFUL_EXIT;
   } else {
     napi_throw_range_error(env, NULL, "unknown handshake scenario");
     return NULL;
@@ -238,12 +287,15 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
   stage = STAGE_INITIAL;
   worker_owns_control_mutex = false;
   control_wait_calls = 0;
+  control_mutex_destroy_calls = 0;
+  control_cond_destroy_calls = 0;
   hook_dispatcher = NULL;
   uv_mutex_init(&stage_mutex);
   uv_cond_init(&stage_cond);
   uv_key_create(&worker_thread_key);
   uv_sem_init(&allow_enabled, 0);
   uv_sem_init(&stop_requested, 0);
+  uv_sem_init(&worker_finished, 0);
 
   bool helper_started = false;
   if (scenario == TEST_SPURIOUS_WAKE) {
@@ -264,11 +316,25 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
     uv_thread_join(&helper_thread);
   }
 
+  bool cleanup_valid = true;
+  if (scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT &&
+      start_status != UIOHOOK_SUCCESS) {
+    cleanup_valid = control_mutex_destroy_calls == 1 &&
+                    control_cond_destroy_calls == 1;
+  }
+
+  uv_sem_destroy(&worker_finished);
   uv_sem_destroy(&stop_requested);
   uv_sem_destroy(&allow_enabled);
   uv_key_delete(&worker_thread_key);
   uv_cond_destroy(&stage_cond);
   uv_mutex_destroy(&stage_mutex);
+
+  if (!cleanup_valid) {
+    napi_throw_error(env, NULL,
+                     "startup synchronization was not destroyed exactly once");
+    return NULL;
+  }
 
   napi_value js_result;
   napi_create_int32(env, result, &js_result);
