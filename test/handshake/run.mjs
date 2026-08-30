@@ -13,6 +13,7 @@ const expectedByCase = new Map([
   ["failed-stop", 1],
   ["enabled-then-successful-exit", 1],
   ["finished-before-stop", 0],
+  ["double-stop", 1],
 ]);
 const fatalCases = new Set(["cleanup-stop-failure"]);
 const addonCases = new Set(["dispatch-unlocked"]);

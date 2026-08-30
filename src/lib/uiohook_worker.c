@@ -206,6 +206,8 @@ int uiohook_worker_start(dispatcher_t dispatch_proc) {
 }
 
 int uiohook_worker_stop() {
+  if (!worker_initialized) return UIOHOOK_FAILURE;
+
   int status = hook_stop();
 
   if (status != UIOHOOK_SUCCESS) {

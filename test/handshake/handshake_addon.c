@@ -10,7 +10,8 @@ typedef enum {
   TEST_EARLY_FAILURE,
   TEST_FAILED_STOP,
   TEST_ENABLED_THEN_SUCCESSFUL_EXIT,
-  TEST_FINISHED_BEFORE_STOP
+  TEST_FINISHED_BEFORE_STOP,
+  TEST_DOUBLE_STOP
 } test_scenario;
 
 typedef enum {
@@ -33,6 +34,7 @@ static int test_uv_mutex_trylock(uv_mutex_t* mutex);
 static void test_uv_mutex_unlock(uv_mutex_t* mutex);
 static int test_uv_thread_create(uv_thread_t* thread, uv_thread_cb entry,
                                  void* arg);
+static int test_uv_thread_join(uv_thread_t* thread);
 static int test_hook_run(void);
 static int test_hook_stop(void);
 static void test_hook_set_dispatch_proc(dispatcher_t dispatch_proc);
@@ -51,6 +53,7 @@ static void test_hook_set_logger_proc(logger_t logger_proc);
 #define uv_mutex_trylock test_uv_mutex_trylock
 #define uv_mutex_unlock test_uv_mutex_unlock
 #define uv_thread_create test_uv_thread_create
+#define uv_thread_join test_uv_thread_join
 #define hook_run test_hook_run
 #define hook_stop test_hook_stop
 #define hook_set_dispatch_proc test_hook_set_dispatch_proc
@@ -60,6 +63,7 @@ static void test_hook_set_logger_proc(logger_t logger_proc);
 #undef hook_set_dispatch_proc
 #undef hook_stop
 #undef hook_run
+#undef uv_thread_join
 #undef uv_thread_create
 #undef uv_mutex_unlock
 #undef uv_mutex_trylock
@@ -86,6 +90,9 @@ static unsigned int control_wait_calls;
 static unsigned int control_mutex_init_calls;
 static unsigned int control_cond_init_calls;
 static unsigned int hook_thread_create_calls;
+static unsigned int hook_thread_join_calls;
+static unsigned int hook_stop_calls;
+static unsigned int control_lock_after_destroy_calls;
 static unsigned int control_mutex_destroy_calls;
 static unsigned int control_cond_destroy_calls;
 
@@ -126,6 +133,15 @@ static int test_uv_thread_create(uv_thread_t* thread, uv_thread_cb entry,
   }
 
   return uv_thread_create(thread, entry, arg);
+}
+
+static int test_uv_thread_join(uv_thread_t* thread) {
+  if (scenario == TEST_DOUBLE_STOP && thread == &hook_thread) {
+    hook_thread_join_calls += 1;
+    if (hook_thread_join_calls > 1) return UV_EINVAL;
+  }
+
+  return uv_thread_join(thread);
 }
 
 static void spurious_helper(void* arg) {
@@ -208,12 +224,19 @@ static void test_uv_cond_destroy(uv_cond_t* cond) {
   if (cond == &hook_control_cond) {
     control_cond_destroy_calls += 1;
     if (scenario == TEST_FAILED_STOP) return;
+    if (scenario == TEST_DOUBLE_STOP && control_cond_destroy_calls > 1) return;
   }
 
   uv_cond_destroy(cond);
 }
 
 static void test_uv_mutex_lock(uv_mutex_t* mutex) {
+  if (scenario == TEST_DOUBLE_STOP && mutex == &hook_control_mutex &&
+      control_mutex_destroy_calls > 0) {
+    control_lock_after_destroy_calls += 1;
+    return;
+  }
+
   if (scenario == TEST_EARLY_FAILURE && mutex == &hook_control_mutex &&
       is_worker_thread()) {
     // Patched code attempts this lock before publishing FINISHED. Tell the main
@@ -239,6 +262,11 @@ static int test_uv_mutex_trylock(uv_mutex_t* mutex) {
 }
 
 static void test_uv_mutex_unlock(uv_mutex_t* mutex) {
+  if (scenario == TEST_DOUBLE_STOP && mutex == &hook_control_mutex &&
+      control_mutex_destroy_calls > 0) {
+    return;
+  }
+
   if (scenario == TEST_EARLY_FAILURE && mutex == &hook_control_mutex &&
       is_worker_thread()) {
     if (!worker_owns_control_mutex) {
@@ -256,6 +284,7 @@ static void test_uv_mutex_destroy(uv_mutex_t* mutex) {
   if (mutex == &hook_control_mutex) {
     control_mutex_destroy_calls += 1;
     if (scenario == TEST_FAILED_STOP) return;
+    if (scenario == TEST_DOUBLE_STOP && control_mutex_destroy_calls > 1) return;
   }
 
   uv_mutex_destroy(mutex);
@@ -287,6 +316,11 @@ static int test_hook_run(void) {
 static int test_hook_stop(void) {
   if (scenario == TEST_FAILED_STOP || scenario == TEST_FINISHED_BEFORE_STOP) {
     return UIOHOOK_FAILURE;
+  }
+
+  if (scenario == TEST_DOUBLE_STOP) {
+    hook_stop_calls += 1;
+    if (hook_stop_calls > 1) return UIOHOOK_FAILURE;
   }
 
   uv_sem_post(&stop_requested);
@@ -333,6 +367,8 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
     scenario = TEST_ENABLED_THEN_SUCCESSFUL_EXIT;
   } else if (strcmp(name, "finished-before-stop") == 0) {
     scenario = TEST_FINISHED_BEFORE_STOP;
+  } else if (strcmp(name, "double-stop") == 0) {
+    scenario = TEST_DOUBLE_STOP;
   } else {
     napi_throw_range_error(env, NULL, "unknown handshake scenario");
     return NULL;
@@ -344,6 +380,9 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
   control_mutex_init_calls = 0;
   control_cond_init_calls = 0;
   hook_thread_create_calls = 0;
+  hook_thread_join_calls = 0;
+  hook_stop_calls = 0;
+  control_lock_after_destroy_calls = 0;
   control_mutex_destroy_calls = 0;
   control_cond_destroy_calls = 0;
   hook_dispatcher = NULL;
@@ -362,7 +401,8 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
       return NULL;
     }
   } else if (scenario == TEST_FAILED_STOP ||
-             scenario == TEST_FINISHED_BEFORE_STOP) {
+             scenario == TEST_FINISHED_BEFORE_STOP ||
+             scenario == TEST_DOUBLE_STOP) {
     uv_sem_post(&allow_enabled);
   }
 
@@ -379,6 +419,12 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
     uv_sem_post(&stop_requested);
     uv_sem_wait(&worker_finished);
     result = uiohook_worker_stop();
+  } else if (scenario == TEST_DOUBLE_STOP &&
+             start_status == UIOHOOK_SUCCESS) {
+    int first_stop_status = uiohook_worker_stop();
+    result = first_stop_status == UIOHOOK_SUCCESS
+      ? uiohook_worker_stop()
+      : first_stop_status;
   }
 
   if (helper_started) {
@@ -393,6 +439,13 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
   } else if (scenario == TEST_FINISHED_BEFORE_STOP &&
              result == UIOHOOK_SUCCESS) {
     cleanup_valid = control_mutex_destroy_calls == 1 &&
+                    control_cond_destroy_calls == 1;
+  } else if (scenario == TEST_DOUBLE_STOP) {
+    cleanup_valid = result == UIOHOOK_FAILURE &&
+                    hook_stop_calls == 1 &&
+                    hook_thread_join_calls == 1 &&
+                    control_lock_after_destroy_calls == 0 &&
+                    control_mutex_destroy_calls == 1 &&
                     control_cond_destroy_calls == 1;
   }
 

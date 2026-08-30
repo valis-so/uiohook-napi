@@ -239,12 +239,18 @@ class UiohookNapi extends EventEmitter {
     }
   }
 
-  /** @throws `UIOHOOK_ERROR_ALREADY_RUNNING` if another environment owns the listener. */
+  /**
+   * @throws `UIOHOOK_ERROR_ALREADY_RUNNING` if another environment owns the listener.
+   * @throws An `Error` with a `UIOHOOK_*` code if native hook initialization fails.
+   */
   start () {
     lib.start(this.handler.bind(this))
   }
 
-  /** @throws `UIOHOOK_ERROR_NOT_OWNER` if another environment owns the listener. */
+  /**
+   * @throws `UIOHOOK_ERROR_NOT_OWNER` if another environment owns the listener.
+   * @throws An `Error` with a `UIOHOOK_*` code if stopping the native hook fails.
+   */
   stop () {
     lib.stop()
   }

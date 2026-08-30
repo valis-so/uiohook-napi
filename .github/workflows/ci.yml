@@ -51,6 +51,8 @@ jobs:
         timeout-minutes: 2
       - run: node test/handshake/run.mjs finished-before-stop
         timeout-minutes: 2
+      - run: node test/handshake/run.mjs double-stop
+        timeout-minutes: 2
       - run: node test/handshake/run.mjs cleanup-stop-failure
         timeout-minutes: 2
       - run: node test/handshake/run.mjs dispatch-unlocked

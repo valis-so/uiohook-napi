@@ -82,9 +82,10 @@ void dispatch_proc(uiohook_event* const event) {
     return;
   }
 
-  // The hook thread is joined before its TSFN is detached or released, so the
-  // handle remains valid for the duration of this callback without the global
-  // lifecycle lock.
+  // stop_owner joins the hook thread and clears worker_initialized before it
+  // detaches active_owner or releases the TSFN. Cleanup aborts rather than
+  // detach after a failed stop, so active_owner cannot be replaced while a
+  // live callback holds this copied handle.
   napi_status status = napi_call_threadsafe_function(threadsafe_fn, copied_event, napi_tsfn_nonblocking);
   if (status == napi_closing) {
     uv_mutex_lock(&lifecycle_mutex);
@@ -404,8 +405,10 @@ static void AddonCleanUp(void* arg) {
   napi_threadsafe_function threadsafe_fn = NULL;
   int status = stop_owner(state, &threadsafe_fn);
   if (status != UIOHOOK_SUCCESS && status != OWNER_STOP_NO_OWNER && status != OWNER_STOP_NOT_OWNER) {
-    // A Worker unloads native addons after cleanup. Returning while the hook
-    // thread is still live would let it execute unmapped addon code.
+    // Keep active_owner attached: active_owner == NULL must imply the worker
+    // is stopped, so no replacement owner can release a TSFN copied by a live
+    // callback. A Worker also unloads native addons after cleanup; returning
+    // here would let the hook thread execute unmapped addon code.
     napi_fatal_error(
       "AddonCleanUp",
       NAPI_AUTO_LENGTH,
