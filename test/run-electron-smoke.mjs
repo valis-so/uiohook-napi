@@ -1,11 +1,29 @@
 import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const expectedElectron = "42.9.3";
+const packageJson = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+);
+const prebuildScript = packageJson.scripts?.prebuild;
+const electronTarget =
+  typeof prebuildScript === "string"
+    ? prebuildScript.match(
+        /(?:^|\s)--target(?:=|\s+)electron@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?=\s|$)/,
+      )
+    : null;
+if (!electronTarget) {
+  throw new Error(
+    "package.json scripts.prebuild must contain an exact --target electron@<version>",
+  );
+}
+
+const expectedElectron = electronTarget[1];
+const runtimeTarget = `electron@${expectedElectron}`;
 const smokeScript = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  "electron-smoke.cjs",
+  "runtime-smoke.cjs",
 );
 const npmArgs = [
   "exec",
@@ -14,6 +32,7 @@ const npmArgs = [
   "--",
   "electron",
   smokeScript,
+  runtimeTarget,
 ];
 const windowsSmokeScript = path.relative(process.cwd(), smokeScript);
 const command =
@@ -24,7 +43,7 @@ const commandArgs =
         "/d",
         "/s",
         "/c",
-        `npm exec --yes --package=electron@${expectedElectron} -- electron ${windowsSmokeScript}`,
+        `npm exec --yes --package=electron@${expectedElectron} -- electron ${windowsSmokeScript} ${runtimeTarget}`,
       ]
     : npmArgs;
 
