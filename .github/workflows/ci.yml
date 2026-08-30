@@ -45,6 +45,8 @@ jobs:
         timeout-minutes: 2
       - run: node test/handshake/run.mjs early-failure
         timeout-minutes: 2
+      - run: node test/handshake/run.mjs enabled-then-successful-exit
+        timeout-minutes: 2
 
   prebuild:
     name: Prebuild (${{ matrix.platform }}-${{ matrix.arch }})

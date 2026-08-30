@@ -6,11 +6,16 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const currentFile = fileURLToPath(import.meta.url);
 const timeoutMs = 2_000;
+const expectedByCase = new Map([
+  ["spurious-wake", 0],
+  ["early-failure", 2],
+  ["enabled-then-successful-exit", 1],
+]);
 
 function runChildCase(name) {
   const addon = require("./build/Release/handshake_test.node");
   const result = addon.run(name);
-  const expected = name === "early-failure" ? 1 : 0;
+  const expected = expectedByCase.get(name);
   assert.equal(result, expected, `${name} returned ${result}, expected ${expected}`);
 }
 
@@ -61,10 +66,10 @@ if (process.argv[2] === "--case") {
   const requestedCase = process.argv[2];
   const cases = requestedCase
     ? [requestedCase]
-    : ["spurious-wake", "early-failure"];
+    : expectedByCase.keys();
   let failures = 0;
   for (const name of cases) {
-    if (!["spurious-wake", "early-failure"].includes(name)) {
+    if (!expectedByCase.has(name)) {
       throw new Error(`unknown handshake case: ${name}`);
     }
     console.log(`RUN ${name}`);
