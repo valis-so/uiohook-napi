@@ -60,7 +60,7 @@ jobs:
           cache: npm
       - run: |
           sudo apt-get update
-          sudo apt-get install -y libxrandr-dev libxtst-dev xvfb
+          sudo apt-get install -y libxrandr-dev libxt-dev libxtst-dev xvfb
       - run: npm run apply-libuiohook-patch
       - run: npm ci
       - run: xvfb-run -a npm test
