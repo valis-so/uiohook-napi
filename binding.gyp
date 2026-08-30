@@ -37,7 +37,7 @@
         }],
         ['OS=="linux"', {
           'defines': [
-            'USE_XRANDR', 'USE_EVDEV', 'USE_XT'
+            'USE_XRANDR', 'USE_EVDEV', 'USE_XT', 'USE_XTEST'
           ],
           'link_settings': {
             'libraries': [
