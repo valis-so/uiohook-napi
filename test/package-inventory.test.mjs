@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  EXPECTED_VERSION,
   REQUIRED_PREBUILDS,
   verifyPackageRoot,
 } from "../scripts/verify-package.mjs";
@@ -13,7 +14,7 @@ async function makePackageFixture(overrides = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "uiohook-package-"));
   const packageJson = {
     name: "uiohook-napi",
-    version: "1.5.5-valis.1",
+    version: EXPECTED_VERSION,
     license: "MIT AND LGPL-3.0-or-later",
     repository: {
       type: "git",
@@ -54,7 +55,7 @@ test("accepts the complete Valis package contract", async (t) => {
 });
 
 test("rejects the wrong package identity", async (t) => {
-  const root = await makePackageFixture({ version: "1.5.5" });
+  const root = await makePackageFixture({ version: `${EXPECTED_VERSION}-invalid` });
   t.after(() => rm(root, { recursive: true, force: true }));
 
   await assert.rejects(verifyPackageRoot(root), /version/);
