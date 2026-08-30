@@ -399,7 +399,13 @@ static void AddonCleanUp(void* arg) {
   napi_threadsafe_function threadsafe_fn = NULL;
   int status = stop_owner(state, &threadsafe_fn);
   if (status != UIOHOOK_SUCCESS && status != OWNER_STOP_NO_OWNER && status != OWNER_STOP_NOT_OWNER) {
-    threadsafe_fn = detach_owner(state);
+    // A Worker unloads native addons after cleanup. Returning while the hook
+    // thread is still live would let it execute unmapped addon code.
+    napi_fatal_error(
+      "AddonCleanUp",
+      NAPI_AUTO_LENGTH,
+      "Failed to stop native hook during environment cleanup.",
+      NAPI_AUTO_LENGTH);
   }
 
   if (threadsafe_fn != NULL) {

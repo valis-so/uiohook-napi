@@ -45,7 +45,11 @@ jobs:
         timeout-minutes: 2
       - run: node test/handshake/run.mjs early-failure
         timeout-minutes: 2
+      - run: node test/handshake/run.mjs failed-stop
+        timeout-minutes: 2
       - run: node test/handshake/run.mjs enabled-then-successful-exit
+        timeout-minutes: 2
+      - run: node test/handshake/run.mjs cleanup-stop-failure
         timeout-minutes: 2
 
   worker-lifecycle:
