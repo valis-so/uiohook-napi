@@ -8,7 +8,10 @@ typedef enum {
   TEST_NONE = 0,
   TEST_SPURIOUS_WAKE,
   TEST_EARLY_FAILURE,
-  TEST_ENABLED_THEN_SUCCESSFUL_EXIT
+  TEST_FAILED_STOP,
+  TEST_ENABLED_THEN_SUCCESSFUL_EXIT,
+  TEST_FINISHED_BEFORE_STOP,
+  TEST_DOUBLE_STOP
 } test_scenario;
 
 typedef enum {
@@ -20,13 +23,18 @@ typedef enum {
   STAGE_PATCHED_WORKER_WAITING
 } test_stage;
 
+static int test_uv_mutex_init(uv_mutex_t* mutex);
+static void test_uv_mutex_destroy(uv_mutex_t* mutex);
 static void test_uv_cond_signal(uv_cond_t* cond);
 static void test_uv_cond_wait(uv_cond_t* cond, uv_mutex_t* mutex);
+static int test_uv_cond_init(uv_cond_t* cond);
 static void test_uv_cond_destroy(uv_cond_t* cond);
 static void test_uv_mutex_lock(uv_mutex_t* mutex);
 static int test_uv_mutex_trylock(uv_mutex_t* mutex);
 static void test_uv_mutex_unlock(uv_mutex_t* mutex);
-static void test_uv_mutex_destroy(uv_mutex_t* mutex);
+static int test_uv_thread_create(uv_thread_t* thread, uv_thread_cb entry,
+                                 void* arg);
+static int test_uv_thread_join(uv_thread_t* thread);
 static int test_hook_run(void);
 static int test_hook_stop(void);
 static void test_hook_set_dispatch_proc(dispatcher_t dispatch_proc);
@@ -35,13 +43,17 @@ static void test_hook_set_logger_proc(logger_t logger_proc);
 // Compile the real worker implementation, replacing only its OS hook and libuv
 // calls with deterministic test shims. A regression in uiohook_worker.c is
 // therefore exercised directly instead of against a copied implementation.
+#define uv_mutex_init test_uv_mutex_init
+#define uv_mutex_destroy test_uv_mutex_destroy
 #define uv_cond_signal test_uv_cond_signal
 #define uv_cond_wait test_uv_cond_wait
+#define uv_cond_init test_uv_cond_init
 #define uv_cond_destroy test_uv_cond_destroy
 #define uv_mutex_lock test_uv_mutex_lock
 #define uv_mutex_trylock test_uv_mutex_trylock
 #define uv_mutex_unlock test_uv_mutex_unlock
-#define uv_mutex_destroy test_uv_mutex_destroy
+#define uv_thread_create test_uv_thread_create
+#define uv_thread_join test_uv_thread_join
 #define hook_run test_hook_run
 #define hook_stop test_hook_stop
 #define hook_set_dispatch_proc test_hook_set_dispatch_proc
@@ -51,13 +63,17 @@ static void test_hook_set_logger_proc(logger_t logger_proc);
 #undef hook_set_dispatch_proc
 #undef hook_stop
 #undef hook_run
-#undef uv_mutex_destroy
+#undef uv_thread_join
+#undef uv_thread_create
 #undef uv_mutex_unlock
 #undef uv_mutex_trylock
 #undef uv_mutex_lock
 #undef uv_cond_destroy
+#undef uv_cond_init
 #undef uv_cond_wait
 #undef uv_cond_signal
+#undef uv_mutex_destroy
+#undef uv_mutex_init
 
 static test_scenario scenario;
 static test_stage stage;
@@ -71,6 +87,12 @@ static uv_key_t worker_thread_key;
 static dispatcher_t hook_dispatcher;
 static bool worker_owns_control_mutex;
 static unsigned int control_wait_calls;
+static unsigned int control_mutex_init_calls;
+static unsigned int control_cond_init_calls;
+static unsigned int hook_thread_create_calls;
+static unsigned int hook_thread_join_calls;
+static unsigned int hook_stop_calls;
+static unsigned int control_lock_after_destroy_calls;
 static unsigned int control_mutex_destroy_calls;
 static unsigned int control_cond_destroy_calls;
 
@@ -83,6 +105,43 @@ static void set_stage(test_stage next) {
 
 static bool is_worker_thread(void) {
   return uv_key_get(&worker_thread_key) != NULL;
+}
+
+static int test_uv_mutex_init(uv_mutex_t* mutex) {
+  if (scenario == TEST_FAILED_STOP && mutex == &hook_control_mutex) {
+    control_mutex_init_calls += 1;
+    if (control_mutex_init_calls > 1) return 0;
+  }
+
+  return uv_mutex_init(mutex);
+}
+
+static int test_uv_cond_init(uv_cond_t* cond) {
+  if (scenario == TEST_FAILED_STOP && cond == &hook_control_cond) {
+    control_cond_init_calls += 1;
+    if (control_cond_init_calls > 1) return 0;
+  }
+
+  return uv_cond_init(cond);
+}
+
+static int test_uv_thread_create(uv_thread_t* thread, uv_thread_cb entry,
+                                 void* arg) {
+  if (scenario == TEST_FAILED_STOP && thread == &hook_thread) {
+    hook_thread_create_calls += 1;
+    if (hook_thread_create_calls > 1) return UV_EBUSY;
+  }
+
+  return uv_thread_create(thread, entry, arg);
+}
+
+static int test_uv_thread_join(uv_thread_t* thread) {
+  if (scenario == TEST_DOUBLE_STOP && thread == &hook_thread) {
+    hook_thread_join_calls += 1;
+    if (hook_thread_join_calls > 1) return UV_EINVAL;
+  }
+
+  return uv_thread_join(thread);
 }
 
 static void spurious_helper(void* arg) {
@@ -112,7 +171,8 @@ static void test_uv_cond_signal(uv_cond_t* cond) {
 
   uv_cond_signal(cond);
 
-  if (scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT &&
+  if ((scenario == TEST_ENABLED_THEN_SUCCESSFUL_EXIT ||
+       scenario == TEST_FINISHED_BEFORE_STOP) &&
       cond == &hook_control_cond && is_worker_thread() &&
       hook_state == HOOK_START_FINISHED) {
     uv_sem_post(&worker_finished);
@@ -163,12 +223,20 @@ static void test_uv_cond_wait(uv_cond_t* cond, uv_mutex_t* mutex) {
 static void test_uv_cond_destroy(uv_cond_t* cond) {
   if (cond == &hook_control_cond) {
     control_cond_destroy_calls += 1;
+    if (scenario == TEST_FAILED_STOP) return;
+    if (scenario == TEST_DOUBLE_STOP && control_cond_destroy_calls > 1) return;
   }
 
   uv_cond_destroy(cond);
 }
 
 static void test_uv_mutex_lock(uv_mutex_t* mutex) {
+  if (scenario == TEST_DOUBLE_STOP && mutex == &hook_control_mutex &&
+      control_mutex_destroy_calls > 0) {
+    control_lock_after_destroy_calls += 1;
+    return;
+  }
+
   if (scenario == TEST_EARLY_FAILURE && mutex == &hook_control_mutex &&
       is_worker_thread()) {
     // Patched code attempts this lock before publishing FINISHED. Tell the main
@@ -194,6 +262,11 @@ static int test_uv_mutex_trylock(uv_mutex_t* mutex) {
 }
 
 static void test_uv_mutex_unlock(uv_mutex_t* mutex) {
+  if (scenario == TEST_DOUBLE_STOP && mutex == &hook_control_mutex &&
+      control_mutex_destroy_calls > 0) {
+    return;
+  }
+
   if (scenario == TEST_EARLY_FAILURE && mutex == &hook_control_mutex &&
       is_worker_thread()) {
     if (!worker_owns_control_mutex) {
@@ -210,6 +283,8 @@ static void test_uv_mutex_unlock(uv_mutex_t* mutex) {
 static void test_uv_mutex_destroy(uv_mutex_t* mutex) {
   if (mutex == &hook_control_mutex) {
     control_mutex_destroy_calls += 1;
+    if (scenario == TEST_FAILED_STOP) return;
+    if (scenario == TEST_DOUBLE_STOP && control_mutex_destroy_calls > 1) return;
   }
 
   uv_mutex_destroy(mutex);
@@ -239,6 +314,15 @@ static int test_hook_run(void) {
 }
 
 static int test_hook_stop(void) {
+  if (scenario == TEST_FAILED_STOP || scenario == TEST_FINISHED_BEFORE_STOP) {
+    return UIOHOOK_FAILURE;
+  }
+
+  if (scenario == TEST_DOUBLE_STOP) {
+    hook_stop_calls += 1;
+    if (hook_stop_calls > 1) return UIOHOOK_FAILURE;
+  }
+
   uv_sem_post(&stop_requested);
   return UIOHOOK_SUCCESS;
 }
@@ -277,8 +361,14 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
     scenario = TEST_SPURIOUS_WAKE;
   } else if (strcmp(name, "early-failure") == 0) {
     scenario = TEST_EARLY_FAILURE;
+  } else if (strcmp(name, "failed-stop") == 0) {
+    scenario = TEST_FAILED_STOP;
   } else if (strcmp(name, "enabled-then-successful-exit") == 0) {
     scenario = TEST_ENABLED_THEN_SUCCESSFUL_EXIT;
+  } else if (strcmp(name, "finished-before-stop") == 0) {
+    scenario = TEST_FINISHED_BEFORE_STOP;
+  } else if (strcmp(name, "double-stop") == 0) {
+    scenario = TEST_DOUBLE_STOP;
   } else {
     napi_throw_range_error(env, NULL, "unknown handshake scenario");
     return NULL;
@@ -287,6 +377,12 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
   stage = STAGE_INITIAL;
   worker_owns_control_mutex = false;
   control_wait_calls = 0;
+  control_mutex_init_calls = 0;
+  control_cond_init_calls = 0;
+  hook_thread_create_calls = 0;
+  hook_thread_join_calls = 0;
+  hook_stop_calls = 0;
+  control_lock_after_destroy_calls = 0;
   control_mutex_destroy_calls = 0;
   control_cond_destroy_calls = 0;
   hook_dispatcher = NULL;
@@ -304,12 +400,31 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
       napi_throw_error(env, NULL, "failed to create spurious-wake helper");
       return NULL;
     }
+  } else if (scenario == TEST_FAILED_STOP ||
+             scenario == TEST_FINISHED_BEFORE_STOP ||
+             scenario == TEST_DOUBLE_STOP) {
+    uv_sem_post(&allow_enabled);
   }
 
   int start_status = uiohook_worker_start(noop_dispatch);
   int result = start_status;
   if (scenario == TEST_SPURIOUS_WAKE && start_status == UIOHOOK_SUCCESS) {
     result = uiohook_worker_stop();
+  } else if (scenario == TEST_FAILED_STOP &&
+             start_status == UIOHOOK_SUCCESS &&
+             uiohook_worker_stop() == UIOHOOK_FAILURE) {
+    result = uiohook_worker_start(noop_dispatch);
+  } else if (scenario == TEST_FINISHED_BEFORE_STOP &&
+             start_status == UIOHOOK_SUCCESS) {
+    uv_sem_post(&stop_requested);
+    uv_sem_wait(&worker_finished);
+    result = uiohook_worker_stop();
+  } else if (scenario == TEST_DOUBLE_STOP &&
+             start_status == UIOHOOK_SUCCESS) {
+    int first_stop_status = uiohook_worker_stop();
+    result = first_stop_status == UIOHOOK_SUCCESS
+      ? uiohook_worker_stop()
+      : first_stop_status;
   }
 
   if (helper_started) {
@@ -321,14 +436,30 @@ static napi_value run_scenario(napi_env env, napi_callback_info info) {
       start_status != UIOHOOK_SUCCESS) {
     cleanup_valid = control_mutex_destroy_calls == 1 &&
                     control_cond_destroy_calls == 1;
+  } else if (scenario == TEST_FINISHED_BEFORE_STOP &&
+             result == UIOHOOK_SUCCESS) {
+    cleanup_valid = control_mutex_destroy_calls == 1 &&
+                    control_cond_destroy_calls == 1;
+  } else if (scenario == TEST_DOUBLE_STOP) {
+    cleanup_valid = result == UIOHOOK_FAILURE &&
+                    hook_stop_calls == 1 &&
+                    hook_thread_join_calls == 1 &&
+                    control_lock_after_destroy_calls == 0 &&
+                    control_mutex_destroy_calls == 1 &&
+                    control_cond_destroy_calls == 1;
   }
 
-  uv_sem_destroy(&worker_finished);
-  uv_sem_destroy(&stop_requested);
-  uv_sem_destroy(&allow_enabled);
-  uv_key_delete(&worker_thread_key);
-  uv_cond_destroy(&stage_cond);
-  uv_mutex_destroy(&stage_mutex);
+  // A failed stop deliberately leaves the first hook thread and its worker
+  // resources live. The bounded child process owns that unrecoverable state
+  // and exits immediately after returning the restart status.
+  if (scenario != TEST_FAILED_STOP) {
+    uv_sem_destroy(&worker_finished);
+    uv_sem_destroy(&stop_requested);
+    uv_sem_destroy(&allow_enabled);
+    uv_key_delete(&worker_thread_key);
+    uv_cond_destroy(&stage_cond);
+    uv_mutex_destroy(&stage_mutex);
+  }
 
   if (!cleanup_valid) {
     napi_throw_error(env, NULL,

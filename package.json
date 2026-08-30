@@ -22,6 +22,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "install": "node-gyp-build",
+    "test": "node --test test/*.test.js",
     "prebuild": "prebuildify --napi --target electron@42.9.3",
     "build-ts": "tsc",
     "test:listener-exception:build": "node-gyp rebuild --directory test/listener-exception",

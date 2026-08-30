@@ -101,6 +101,18 @@ uIOhook.keyToggle(UiohookKey.Shift, 'down')
 uIOhook.keyToggle(UiohookKey.Shift, 'up')
 ```
 
+## Worker threads
+
+The addon may be loaded from multiple Node.js environments, and `keyTap()` or
+`keyToggle()` may be called from any of them. Only one environment can own the
+active input listener at a time.
+
+- Calling `start()` again from the owner is a no-op.
+- Calling `start()` from another environment throws
+  `UIOHOOK_ERROR_ALREADY_RUNNING`.
+- Calling `stop()` from another environment throws `UIOHOOK_ERROR_NOT_OWNER`.
+- Exiting an environment that does not own the listener does not stop it.
+
 The public methods are:
 
 - `start(): void`

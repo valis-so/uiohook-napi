@@ -45,8 +45,40 @@ jobs:
         timeout-minutes: 2
       - run: node test/handshake/run.mjs early-failure
         timeout-minutes: 2
+      - run: node test/handshake/run.mjs failed-stop
+        timeout-minutes: 2
       - run: node test/handshake/run.mjs enabled-then-successful-exit
         timeout-minutes: 2
+      - run: node test/handshake/run.mjs finished-before-stop
+        timeout-minutes: 2
+      - run: node test/handshake/run.mjs double-stop
+        timeout-minutes: 2
+      - run: node test/handshake/run.mjs cleanup-stop-failure
+        timeout-minutes: 2
+      - run: node test/handshake/run.mjs dispatch-unlocked
+        timeout-minutes: 2
+
+  worker-lifecycle:
+    name: Worker lifecycle (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxrandr-dev libxt-dev libxtst-dev xvfb
+      - run: npm run apply-libuiohook-patch
+      - run: npm ci
+      - run: xvfb-run -a npm test
+        env:
+          UIOHOOK_TEST_REQUIRE_HOOK: 1
+          UIOHOOK_TEST_SYNTHETIC_INPUT: 1
 
   prebuild:
     name: Prebuild (${{ matrix.platform }}-${{ matrix.arch }})
@@ -93,6 +125,7 @@ jobs:
     needs:
       - handshake
       - prebuild
+      - worker-lifecycle
     outputs:
       tarball_name: ${{ steps.tarball.outputs.name }}
     runs-on: ubuntu-24.04
