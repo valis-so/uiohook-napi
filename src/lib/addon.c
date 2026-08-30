@@ -2,14 +2,76 @@
 #include <string.h>
 #include <node_api.h>
 #include <uiohook.h>
+#include <uv.h>
 #include "napi_helpers.h"
 #include "uiohook_worker.h"
 
-static napi_threadsafe_function threadsafe_fn = NULL;
-static bool is_worker_running = false;
+typedef struct {
+  napi_threadsafe_function threadsafe_fn;
+} addon_state;
+
+typedef enum {
+  OWNER_STOP_NO_OWNER = -2,
+  OWNER_STOP_NOT_OWNER = -1
+} owner_stop_status;
+
+static uv_once_t lifecycle_once = UV_ONCE_INIT;
+static uv_mutex_t lifecycle_mutex;
+static int lifecycle_mutex_status = -1;
+static addon_state* active_owner = NULL;
+
+static void AddonCleanUp(void* arg);
+
+static void lifecycle_init(void) {
+  lifecycle_mutex_status = uv_mutex_init(&lifecycle_mutex);
+}
+
+static napi_threadsafe_function detach_owner(addon_state* state) {
+  napi_threadsafe_function threadsafe_fn = NULL;
+
+  uv_mutex_lock(&lifecycle_mutex);
+  if (active_owner == state) {
+    active_owner = NULL;
+    threadsafe_fn = state->threadsafe_fn;
+    state->threadsafe_fn = NULL;
+  }
+  uv_mutex_unlock(&lifecycle_mutex);
+
+  return threadsafe_fn;
+}
+
+static int stop_owner(addon_state* state, napi_threadsafe_function* threadsafe_fn) {
+  uv_mutex_lock(&lifecycle_mutex);
+  if (active_owner == NULL) {
+    uv_mutex_unlock(&lifecycle_mutex);
+    return OWNER_STOP_NO_OWNER;
+  }
+  if (active_owner != state) {
+    uv_mutex_unlock(&lifecycle_mutex);
+    return OWNER_STOP_NOT_OWNER;
+  }
+  uv_mutex_unlock(&lifecycle_mutex);
+
+  int status = uiohook_worker_stop();
+  if (status != UIOHOOK_SUCCESS) return status;
+
+  uv_mutex_lock(&lifecycle_mutex);
+  active_owner = NULL;
+  *threadsafe_fn = state->threadsafe_fn;
+  state->threadsafe_fn = NULL;
+  uv_mutex_unlock(&lifecycle_mutex);
+
+  return UIOHOOK_SUCCESS;
+}
 
 void dispatch_proc(uiohook_event* const event) {
-  if (threadsafe_fn == NULL) return;
+  uv_mutex_lock(&lifecycle_mutex);
+  addon_state* owner = active_owner;
+  napi_threadsafe_function threadsafe_fn = owner != NULL ? owner->threadsafe_fn : NULL;
+  if (threadsafe_fn == NULL) {
+    uv_mutex_unlock(&lifecycle_mutex);
+    return;
+  }
 
   uiohook_event* copied_event = malloc(sizeof(uiohook_event));
   memcpy(copied_event, event, sizeof(uiohook_event));
@@ -19,10 +81,14 @@ void dispatch_proc(uiohook_event* const event) {
 
   napi_status status = napi_call_threadsafe_function(threadsafe_fn, copied_event, napi_tsfn_nonblocking);
   if (status == napi_closing) {
-    threadsafe_fn = NULL;
+    if (active_owner == owner && owner->threadsafe_fn == threadsafe_fn) {
+      owner->threadsafe_fn = NULL;
+    }
+    uv_mutex_unlock(&lifecycle_mutex);
     free(copied_event);
     return;
   }
+  uv_mutex_unlock(&lifecycle_mutex);
   NAPI_FATAL_IF_FAILED(status, "dispatch_proc", "napi_call_threadsafe_function");
 }
 
@@ -158,7 +224,16 @@ napi_value uiohook_to_js_event(napi_env env, uiohook_event* event) {
 void tsfn_to_js_proxy(napi_env env, napi_value js_callback, void* context, void* _event) {
   uiohook_event* event = (uiohook_event*)_event;
 
-  if (env == NULL || js_callback == NULL || is_worker_running == false) {
+  if (env == NULL || js_callback == NULL) {
+    free(event);
+    return;
+  }
+
+  addon_state* state = (addon_state*)context;
+  uv_mutex_lock(&lifecycle_mutex);
+  bool is_active_owner = active_owner == state && state->threadsafe_fn != NULL;
+  uv_mutex_unlock(&lifecycle_mutex);
+  if (!is_active_owner) {
     free(event);
     return;
   }
@@ -178,35 +253,73 @@ void tsfn_to_js_proxy(napi_env env, napi_value js_callback, void* context, void*
 }
 
 napi_value AddonStart(napi_env env, napi_callback_info info) {
-  if (is_worker_running == true)
-    return NULL;
-
   napi_status status;
 
   size_t info_argc = 1;
   napi_value info_argv[1];
-  status = napi_get_cb_info(env, info, &info_argc, info_argv, NULL, NULL);
+  void* info_data;
+  status = napi_get_cb_info(env, info, &info_argc, info_argv, NULL, &info_data);
   NAPI_THROW_IF_FAILED(env, status, NULL);
+
+  addon_state* state = (addon_state*)info_data;
+
+  uv_mutex_lock(&lifecycle_mutex);
+  if (active_owner == state) {
+    uv_mutex_unlock(&lifecycle_mutex);
+    return NULL;
+  }
+  if (active_owner != NULL) {
+    uv_mutex_unlock(&lifecycle_mutex);
+    NAPI_THROW(env, "UIOHOOK_ERROR_ALREADY_RUNNING", "uIOhook is already running in another environment.", NULL);
+  }
+  active_owner = state;
+  uv_mutex_unlock(&lifecycle_mutex);
 
   napi_value cb = info_argv[0];
 
   napi_value async_resource_name;
   status = napi_create_string_utf8(env, "UIOHOOK_NAPI", NAPI_AUTO_LENGTH, &async_resource_name);
-  NAPI_THROW_IF_FAILED(env, status, NULL);
+  if (status != napi_ok) {
+    detach_owner(state);
+    NAPI_THROW_IF_FAILED(env, status, NULL);
+  }
 
-  status = napi_create_threadsafe_function(env, cb, NULL, async_resource_name, 0, 1, NULL, NULL, NULL, tsfn_to_js_proxy, &threadsafe_fn);
-  NAPI_THROW_IF_FAILED(env, status, NULL);
+  napi_threadsafe_function threadsafe_fn = NULL;
+  status = napi_create_threadsafe_function(env, cb, NULL, async_resource_name, 0, 1, NULL, NULL, state, tsfn_to_js_proxy, &threadsafe_fn);
+  if (status != napi_ok) {
+    detach_owner(state);
+    NAPI_THROW_IF_FAILED(env, status, NULL);
+  }
+
+  uv_mutex_lock(&lifecycle_mutex);
+  state->threadsafe_fn = threadsafe_fn;
+  uv_mutex_unlock(&lifecycle_mutex);
+
+  status = napi_add_env_cleanup_hook(env, AddonCleanUp, state);
+  if (status != napi_ok) {
+    detach_owner(state);
+    NAPI_FATAL_IF_FAILED(
+      napi_release_threadsafe_function(threadsafe_fn, napi_tsfn_abort),
+      "AddonStart",
+      "napi_release_threadsafe_function");
+    NAPI_THROW(env, "UIOHOOK_FAILURE", "Failed to register the environment cleanup hook.", NULL);
+  }
 
   int worker_status = uiohook_worker_start(dispatch_proc);
 
   if (worker_status != UIOHOOK_SUCCESS) {
-    napi_release_threadsafe_function(threadsafe_fn, napi_tsfn_release);
-    threadsafe_fn = NULL;
+    status = napi_remove_env_cleanup_hook(env, AddonCleanUp, state);
+    NAPI_FATAL_IF_FAILED(status, "AddonStart", "napi_remove_env_cleanup_hook");
+
+    threadsafe_fn = detach_owner(state);
+    if (threadsafe_fn != NULL) {
+      status = napi_release_threadsafe_function(threadsafe_fn, napi_tsfn_abort);
+      NAPI_FATAL_IF_FAILED(status, "AddonStart", "napi_release_threadsafe_function");
+    }
   }
 
   switch (worker_status) {
   case UIOHOOK_SUCCESS: {
-    is_worker_running = true;
     return NULL;
   }
   case UIOHOOK_ERROR_THREAD_CREATE:
@@ -242,16 +355,28 @@ napi_value AddonStart(napi_env env, napi_callback_info info) {
 }
 
 napi_value AddonStop(napi_env env, napi_callback_info info) {
-  if (is_worker_running == false)
-    return NULL;
+  napi_status napi_result;
+  size_t info_argc = 0;
+  void* info_data;
+  napi_result = napi_get_cb_info(env, info, &info_argc, NULL, NULL, &info_data);
+  NAPI_THROW_IF_FAILED(env, napi_result, NULL);
 
-  int status = uiohook_worker_stop();
+  addon_state* state = (addon_state*)info_data;
+  napi_threadsafe_function threadsafe_fn = NULL;
+  int status = stop_owner(state, &threadsafe_fn);
 
   switch (status) {
+  case OWNER_STOP_NO_OWNER:
+    return NULL;
+  case OWNER_STOP_NOT_OWNER:
+    NAPI_THROW(env, "UIOHOOK_ERROR_NOT_OWNER", "uIOhook is owned by another environment.", NULL);
   case UIOHOOK_SUCCESS: {
-    is_worker_running = false;
-    napi_release_threadsafe_function(threadsafe_fn, napi_tsfn_release);
-    threadsafe_fn = NULL;
+    napi_result = napi_remove_env_cleanup_hook(env, AddonCleanUp, state);
+    NAPI_FATAL_IF_FAILED(napi_result, "AddonStop", "napi_remove_env_cleanup_hook");
+    if (threadsafe_fn != NULL) {
+      napi_result = napi_release_threadsafe_function(threadsafe_fn, napi_tsfn_abort);
+      NAPI_THROW_IF_FAILED(env, napi_result, NULL);
+    }
     return NULL;
   }
   case UIOHOOK_ERROR_OUT_OF_MEMORY:
@@ -264,10 +389,24 @@ napi_value AddonStop(napi_env env, napi_callback_info info) {
   }
 }
 
-void AddonCleanUp (void* arg) {
-  if (is_worker_running) {
-    uiohook_worker_stop();
+static void AddonCleanUp(void* arg) {
+  addon_state* state = (addon_state*)arg;
+
+  napi_threadsafe_function threadsafe_fn = NULL;
+  int status = stop_owner(state, &threadsafe_fn);
+  if (status != UIOHOOK_SUCCESS && status != OWNER_STOP_NO_OWNER && status != OWNER_STOP_NOT_OWNER) {
+    threadsafe_fn = detach_owner(state);
   }
+
+  if (threadsafe_fn != NULL) {
+    napi_release_threadsafe_function(threadsafe_fn, napi_tsfn_abort);
+  }
+}
+
+static void AddonFinalize(napi_env env, void* data, void* hint) {
+  (void)env;
+  (void)hint;
+  free(data);
 }
 
 typedef enum {
@@ -312,26 +451,39 @@ napi_value AddonKeyTap (napi_env env, napi_callback_info info) {
 }
 
 NAPI_MODULE_INIT() {
+  uv_once(&lifecycle_once, lifecycle_init);
+  if (lifecycle_mutex_status != 0) {
+    NAPI_THROW(env, "UIOHOOK_ERROR_OUT_OF_MEMORY", "Failed to initialize addon lifecycle state.", NULL);
+  }
+
+  addon_state* state = calloc(1, sizeof(addon_state));
+  if (state == NULL) {
+    NAPI_THROW(env, "UIOHOOK_ERROR_OUT_OF_MEMORY", "Failed to allocate addon lifecycle state.", NULL);
+  }
+
   napi_status status;
+  status = napi_set_instance_data(env, state, AddonFinalize, NULL);
+  if (status != napi_ok) {
+    free(state);
+    NAPI_THROW_IF_FAILED(env, status, NULL);
+  }
+
   napi_value export_fn;
 
-  status = napi_create_function(env, NULL, 0, AddonStart, NULL, &export_fn);
+  status = napi_create_function(env, NULL, 0, AddonStart, state, &export_fn);
   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_function");
   status = napi_set_named_property(env, exports, "start", export_fn);
   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
 
-  status = napi_create_function(env, NULL, 0, AddonStop, NULL, &export_fn);
+  status = napi_create_function(env, NULL, 0, AddonStop, state, &export_fn);
   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_function");
   status = napi_set_named_property(env, exports, "stop", export_fn);
   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
 
-  status = napi_create_function(env, NULL, 0, AddonKeyTap, NULL, &export_fn);
+  status = napi_create_function(env, NULL, 0, AddonKeyTap, state, &export_fn);
   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_create_function");
   status = napi_set_named_property(env, exports, "keyTap", export_fn);
   NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_set_named_property");
-
-  status = napi_add_env_cleanup_hook(env, AddonCleanUp, NULL);
-  NAPI_FATAL_IF_FAILED(status, "NAPI_MODULE_INIT", "napi_add_env_cleanup_hook");
 
   return exports;
 }
