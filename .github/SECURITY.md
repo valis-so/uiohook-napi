@@ -6,7 +6,7 @@ Only the latest Valis release receives security updates.
 
 | Version | Supported |
 | --- | --- |
-| 1.5.5-valis.4 | Yes |
+| 1.5.5-valis.6 | Yes |
 | All other versions | No |
 
 ## Reporting a Vulnerability
