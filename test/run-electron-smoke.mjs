@@ -20,6 +20,20 @@ if (!electronTarget) {
 }
 
 const expectedElectron = electronTarget[1];
+const versionParts = packageJson.version?.match(
+  /^\d+\.\d+\.\d+-node-(\d+\.\d+\.\d+)-electron-(\d+\.\d+\.\d+)-valis\.\d+$/,
+);
+if (!versionParts) {
+  throw new Error(
+    `package.json version ${JSON.stringify(packageJson.version)} must match <upstream>-node-<node>-electron-<electron>-valis.<n>`,
+  );
+}
+const [, expectedNode, versionElectron] = versionParts;
+if (versionElectron !== expectedElectron) {
+  throw new Error(
+    `package.json version names Electron ${versionElectron}, but scripts.prebuild targets Electron ${expectedElectron}`,
+  );
+}
 const runtimeTarget = `electron@${expectedElectron}`;
 const smokeScript = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -55,6 +69,7 @@ const result = spawnSync(
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
+      UIOHOOK_EXPECTED_NODE: expectedNode,
     },
     stdio: "inherit",
     timeout: 120_000,
