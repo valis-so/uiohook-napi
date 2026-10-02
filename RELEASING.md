@@ -11,20 +11,18 @@ Each release targets exactly one Electron runtime, and its version names it:
 <upstream>-node-<node>-electron-<electron>-valis.<n>
 ```
 
-For example, `1.5.5-node-24.21.0-electron-44.5.1-valis.2` (tag
-`v1.5.5-node-24.21.0-electron-44.5.1-valis.2`).
+For example, `1.5.5-node-24.21.0-electron-44.5.1-valis.6` (tag
+`v1.5.5-node-24.21.0-electron-44.5.1-valis.6`).
 
 - `<upstream>` is the upstream `uiohook-napi` version the fork is based on.
 - `<electron>` is the exact `--target electron@<version>` in
   `scripts.prebuild`.
 - `<node>` is the Node.js version embedded in that Electron release, as listed
   on <https://releases.electronjs.org>.
-- `<n>` is the revision of the Valis fork code (wrapper sources, `libuiohook`
-  revision and `src/libuiohook.patch`). Increment it when that code changes;
-  rebuilding the same code for another Electron runtime keeps it.
-  It continues the numbering of the earlier `1.5.5-valis.<n>` releases:
-  `1.5.5-valis.3` and `1.5.5-valis.4` only rebuilt the `1.5.5-valis.2` code
-  for newer Electron runtimes, so the current fork code revision is `2`.
+- `<n>` is the Valis release number. It increments by one with every release,
+  including rebuilds of the same code for another Electron runtime, so no two
+  releases share it. It continues the numbering of the earlier
+  `1.5.5-valis.<n>` releases.
 
 `npm run test:electron` rejects a version whose Electron part differs from
 `scripts.prebuild` or whose Node part differs from the Node.js embedded in that
