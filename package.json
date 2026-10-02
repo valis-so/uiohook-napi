@@ -1,6 +1,6 @@
 {
   "name": "uiohook-napi",
-  "version": "1.5.5-valis.3",
+  "version": "1.5.5-valis.4",
   "author": {
     "name": "Alexander Drozdov"
   },
@@ -23,7 +23,7 @@
   "scripts": {
     "install": "node-gyp-build",
     "test": "node --test test/*.test.js",
-    "prebuild": "prebuildify --napi --target electron@42.10.0",
+    "prebuild": "prebuildify --napi --target electron@42.11.10",
     "build-ts": "tsc",
     "test:listener-exception:build": "node-gyp rebuild --directory test/listener-exception",
     "test:listener-exception": "npm run test:listener-exception:build && node test/listener-exception/run.cjs",
