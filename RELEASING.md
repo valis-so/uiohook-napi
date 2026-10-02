@@ -22,6 +22,9 @@ For example, `1.5.5-node-24.21.0-electron-44.5.1-valis.2` (tag
 - `<n>` is the revision of the Valis fork code (wrapper sources, `libuiohook`
   revision and `src/libuiohook.patch`). Increment it when that code changes;
   rebuilding the same code for another Electron runtime keeps it.
+  It continues the numbering of the earlier `1.5.5-valis.<n>` releases:
+  `1.5.5-valis.3` and `1.5.5-valis.4` only rebuilt the `1.5.5-valis.2` code
+  for newer Electron runtimes, so the current fork code revision is `2`.
 
 `npm run test:electron` rejects a version whose Electron part differs from
 `scripts.prebuild` or whose Node part differs from the Node.js embedded in that
