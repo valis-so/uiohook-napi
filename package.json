@@ -1,6 +1,6 @@
 {
   "name": "uiohook-napi",
-  "version": "1.5.5-valis.5",
+  "version": "1.5.5-node-24.21.0-electron-43.7.7-valis.2",
   "author": {
     "name": "Alexander Drozdov"
   },
