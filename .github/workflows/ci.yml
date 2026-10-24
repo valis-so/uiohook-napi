@@ -248,7 +248,7 @@ jobs:
           notes="$RUNNER_TEMP/release-notes.md"
           gh api "repos/$GH_REPO/git/tags/$TAG_OBJECT" --jq .message \
             | sed -E '/^-----BEGIN (SSH|PGP) SIGNATURE-----$/,$d' > "$notes"
-          if [[ ! -s "$notes" ]]; then
+          if ! grep -q '[^[:space:]]' "$notes"; then
             echo "::error::Release tag $TAG has no annotation message"
             exit 1
           fi
