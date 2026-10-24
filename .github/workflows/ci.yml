@@ -184,6 +184,7 @@ jobs:
       id-token: write
     steps:
       - name: Verify release tag
+        id: tag
         shell: bash
         env:
           GH_REPO: ${{ github.repository }}
@@ -222,6 +223,8 @@ jobs:
             echo "::error::Release tag $TAG does not target a commit in master history"
             exit 1
           fi
+
+          echo "object=$tag_object" >> "$GITHUB_OUTPUT"
       - name: Download package artifact
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
@@ -238,7 +241,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_TARBALL: release/${{ needs.package.outputs.tarball_name }}
           TAG: ${{ github.ref_name }}
+          TAG_OBJECT: ${{ steps.tag.outputs.object }}
         run: |
+          # The job has no checkout, so --notes-from-tag cannot read the tag.
+          # Take the annotation of the verified tag object and drop its signature.
+          notes="$RUNNER_TEMP/release-notes.md"
+          gh api "repos/$GH_REPO/git/tags/$TAG_OBJECT" --jq .message \
+            | sed -E '/^-----BEGIN (SSH|PGP) SIGNATURE-----$/,$d' > "$notes"
+          if [[ ! -s "$notes" ]]; then
+            echo "::error::Release tag $TAG has no annotation message"
+            exit 1
+          fi
+
           if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
             if [[ "$is_draft" != "true" ]]; then
               echo "::error::Release $TAG is already published"
@@ -249,7 +263,7 @@ jobs:
           else
             gh release create "$TAG" "$PACKAGE_TARBALL" \
               --draft \
-              --notes-from-tag \
+              --notes-file "$notes" \
               --title "uiohook-napi ${TAG#v}" \
               --verify-tag
           fi
