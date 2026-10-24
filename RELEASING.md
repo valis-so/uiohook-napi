@@ -3,6 +3,31 @@
 Future releases are built once in GitHub Actions, attested, reviewed as drafts,
 and made immutable when published.
 
+## Version scheme
+
+Each release targets exactly one Electron runtime, and its version names it:
+
+```text
+<upstream>-node-<node>-electron-<electron>-valis.<n>
+```
+
+For example, `1.5.5-node-24.21.0-electron-44.5.1-valis.6` (tag
+`v1.5.5-node-24.21.0-electron-44.5.1-valis.6`).
+
+- `<upstream>` is the upstream `uiohook-napi` version the fork is based on.
+- `<electron>` is the exact `--target electron@<version>` in
+  `scripts.prebuild`.
+- `<node>` is the Node.js version embedded in that Electron release, as listed
+  on <https://releases.electronjs.org>.
+- `<n>` is the Valis release number. It increments by one with every release,
+  including rebuilds of the same code for another Electron runtime, so no two
+  releases share it. It continues the numbering of the earlier
+  `1.5.5-valis.<n>` releases.
+
+`npm run test:electron` rejects a version whose Electron part differs from
+`scripts.prebuild` or whose Node part differs from the Node.js embedded in that
+Electron runtime.
+
 ## Prepare the release
 
 1. Merge a pull request that updates all release-specific metadata:
