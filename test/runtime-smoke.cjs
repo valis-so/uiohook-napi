@@ -23,6 +23,13 @@ if (target === "node") {
     expectedElectron,
     `expected Electron ${expectedElectron}, got ${process.versions.electron ?? "plain Node"}`,
   );
+  if (process.env.UIOHOOK_EXPECTED_NODE) {
+    assert.equal(
+      process.versions.node,
+      process.env.UIOHOOK_EXPECTED_NODE,
+      `expected Electron ${expectedElectron} to embed Node ${process.env.UIOHOOK_EXPECTED_NODE}, got ${process.versions.node}`,
+    );
+  }
 } else {
   throw new Error(
     `invalid runtime target ${JSON.stringify(target)}; expected "node" or "electron@<version>"`,
