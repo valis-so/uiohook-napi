@@ -20,7 +20,7 @@ Valis releases are distributed as versioned package archives attached to
 the release archive directly:
 
 ```sh
-npm install https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.19.0-electron-42.11.10-valis.7/uiohook-napi-1.5.5-node-24.19.0-electron-42.11.10-valis.7.tgz
+npm install https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.22.0-electron-43.8.3-valis.8/uiohook-napi-1.5.5-node-24.22.0-electron-43.8.3-valis.8.tgz
 ```
 
 To pin the same release explicitly in `package.json`:
@@ -28,7 +28,7 @@ To pin the same release explicitly in `package.json`:
 ```json
 {
   "dependencies": {
-    "uiohook-napi": "https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.19.0-electron-42.11.10-valis.7/uiohook-napi-1.5.5-node-24.19.0-electron-42.11.10-valis.7.tgz"
+    "uiohook-napi": "https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.22.0-electron-43.8.3-valis.8/uiohook-napi-1.5.5-node-24.22.0-electron-43.8.3-valis.8.tgz"
   }
 }
 ```
@@ -39,7 +39,7 @@ the Git tree does not contain the compiled `dist` or `prebuilds` artifacts.
 
 ## Prebuilt binaries
 
-Release `1.5.5-node-24.19.0-electron-42.11.10-valis.7` contains prebuilt binaries for these CI-tested targets:
+Release `1.5.5-node-24.22.0-electron-43.8.3-valis.8` contains prebuilt binaries for these CI-tested targets:
 
 | Platform | Architecture | Prebuild directory |
 | --- | --- | --- |
@@ -47,8 +47,8 @@ Release `1.5.5-node-24.19.0-electron-42.11.10-valis.7` contains prebuilt binarie
 | macOS | x64 (Intel) | `darwin-x64` |
 | Windows | x64 | `win32-x64` |
 
-Release CI uses Node.js 24 as the build host, targets Electron 42.11.10 headers,
-and smoke-loads each binary with Electron 42.11.10. The resulting binaries use
+Release CI uses Node.js 24 as the build host, targets Electron 43.8.3 headers,
+and smoke-loads each binary with Electron 43.8.3. The resulting binaries use
 N-API, while the package declares Node.js 16 or newer. The release gate covers
 only the targets and runtime above.
 
