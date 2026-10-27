@@ -6,7 +6,7 @@ Only the latest Valis release receives security updates.
 
 | Version | Supported |
 | --- | --- |
-| 1.5.5-node-24.22.0-electron-43.8.3-valis.8 | Yes |
+| 1.5.5-node-24.22.0-electron-45.0.0-valis.9 | Yes |
 | All other versions | No |
 
 ## Reporting a Vulnerability
