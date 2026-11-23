@@ -19,3 +19,19 @@ assert.match(
 );
 assert.match(child.stderr, /at .*child\.cjs:\d+:\d+/);
 assert.doesNotMatch(child.stderr, /FATAL ERROR/);
+
+for (const [index, eventName] of ["keyboard", "mouse", "wheel"].entries()) {
+  const lateEvent = spawnSync(
+    process.execPath,
+    [path.join(__dirname, "late-event-child.cjs"), String(index)],
+    { encoding: "utf8", timeout: 10_000 },
+  );
+  assert.ifError(lateEvent.error);
+  assert.equal(lateEvent.signal, null, `${eventName} event: ${lateEvent.stderr}`);
+  assert.equal(lateEvent.status, 0, `${eventName} event: ${lateEvent.stderr}`);
+  assert.match(
+    lateEvent.stderr,
+    /late input reached event conversion with JS disabled/,
+    `${eventName} event: test must reach conversion during cleanup\n${lateEvent.stderr}`,
+  );
+}
