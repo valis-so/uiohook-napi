@@ -19,16 +19,6 @@
       "include_dirs": [
         "../../libuiohook/include",
         "../../src/lib"
-      ],
-      "conditions": [
-        ["OS!='win'", {
-          "cflags": ["-std=c11"]
-        }],
-        ["OS=='mac'", {
-          "xcode_settings": {
-            "GCC_C_LANGUAGE_STANDARD": "c11"
-          }
-        }]
       ]
     }
   ]
