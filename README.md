@@ -20,7 +20,7 @@ Valis releases are distributed as versioned package archives attached to
 the release archive directly:
 
 ```sh
-npm install https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.22.2-electron-45.2.3-valis.10/uiohook-napi-1.5.5-node-24.22.2-electron-45.2.3-valis.10.tgz
+npm install https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.22.2-electron-45.2.3-valis.11/uiohook-napi-1.5.5-node-24.22.2-electron-45.2.3-valis.11.tgz
 ```
 
 To pin the same release explicitly in `package.json`:
@@ -28,7 +28,7 @@ To pin the same release explicitly in `package.json`:
 ```json
 {
   "dependencies": {
-    "uiohook-napi": "https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.22.2-electron-45.2.3-valis.10/uiohook-napi-1.5.5-node-24.22.2-electron-45.2.3-valis.10.tgz"
+    "uiohook-napi": "https://github.com/valis-so/uiohook-napi/releases/download/v1.5.5-node-24.22.2-electron-45.2.3-valis.11/uiohook-napi-1.5.5-node-24.22.2-electron-45.2.3-valis.11.tgz"
   }
 }
 ```
@@ -39,7 +39,7 @@ the Git tree does not contain the compiled `dist` or `prebuilds` artifacts.
 
 ## Prebuilt binaries
 
-Release `1.5.5-node-24.22.2-electron-45.2.3-valis.10` contains prebuilt binaries for these CI-tested targets:
+Release `1.5.5-node-24.22.2-electron-45.2.3-valis.11` contains prebuilt binaries for these CI-tested targets:
 
 | Platform | Architecture | Prebuild directory |
 | --- | --- | --- |
