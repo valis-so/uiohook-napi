@@ -99,7 +99,14 @@ void dispatch_proc(uiohook_event* const event) {
   NAPI_FATAL_IF_FAILED(status, "dispatch_proc", "napi_call_threadsafe_function");
 }
 
-napi_value uiohook_to_js_event(napi_env env, uiohook_event* event) {
+static bool uiohook_napi_event_js_unavailable(napi_env env, napi_status status) {
+  // Node-API v8 also uses this status when the environment has disabled JS.
+  bool pending = true;
+  return status == napi_pending_exception &&
+         napi_is_exception_pending(env, &pending) == napi_ok && !pending;
+}
+
+static napi_value uiohook_to_js_event(napi_env env, uiohook_event* event, bool* js_unavailable) {
   napi_status status;
 
   napi_value event_obj;
@@ -145,6 +152,10 @@ napi_value uiohook_to_js_event(napi_env env, uiohook_event* event) {
       { "keycode",  NULL, NULL, NULL, NULL, e_keycode,  napi_enumerable, NULL },
     };
     status = napi_define_properties(env, event_obj, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
+    if (uiohook_napi_event_js_unavailable(env, status)) {
+      *js_unavailable = true;
+      return NULL;
+    }
     NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_define_properties");
     return event_obj;
   }
@@ -178,6 +189,10 @@ napi_value uiohook_to_js_event(napi_env env, uiohook_event* event) {
       { "clicks",   NULL, NULL, NULL, NULL, e_clicks,   napi_enumerable, NULL },
     };
     status = napi_define_properties(env, event_obj, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
+    if (uiohook_napi_event_js_unavailable(env, status)) {
+      *js_unavailable = true;
+      return NULL;
+    }
     NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_define_properties");
     return event_obj;
   }
@@ -221,6 +236,10 @@ napi_value uiohook_to_js_event(napi_env env, uiohook_event* event) {
       { "rotation",  NULL, NULL, NULL, NULL, e_rotation,  napi_enumerable, NULL },
     };
     status = napi_define_properties(env, event_obj, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
+    if (uiohook_napi_event_js_unavailable(env, status)) {
+      *js_unavailable = true;
+      return NULL;
+    }
     NAPI_FATAL_IF_FAILED(status, "uiohook_to_js_event", "napi_define_properties");
     return event_obj;
   }
@@ -247,8 +266,12 @@ void tsfn_to_js_proxy(napi_env env, napi_value js_callback, void* context, void*
 
   napi_status status;
 
-  napi_value event_obj = uiohook_to_js_event(env, event);
+  bool js_unavailable = false;
+  napi_value event_obj = uiohook_to_js_event(env, event, &js_unavailable);
   free(event);
+  if (js_unavailable) {
+    return;
+  }
 
   napi_value global;
   status = napi_get_global(env, &global);
